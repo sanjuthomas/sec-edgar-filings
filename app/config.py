@@ -69,6 +69,27 @@ class Settings:
         default_factory=lambda: int(os.environ.get("SEC_CONTEXT_WINDOW", "350"))
     )
 
+    # MongoDB cache for ticker -> CIK lookups. The default points at a local
+    # instance with no authentication; override MONGO_URI to supply credentials.
+    mongo_uri: str = field(
+        default_factory=lambda: os.environ.get(
+            "MONGO_URI", "mongodb://localhost:27017"
+        )
+    )
+    mongo_db: str = field(
+        default_factory=lambda: os.environ.get("MONGO_DB", "sec_buybacks")
+    )
+    mongo_tickers_collection: str = field(
+        default_factory=lambda: os.environ.get(
+            "MONGO_TICKERS_COLLECTION", "tickers"
+        )
+    )
+    # How long to wait for the Mongo server before giving up and falling back to
+    # a direct EDGAR call (milliseconds).
+    mongo_timeout_ms: int = field(
+        default_factory=lambda: int(os.environ.get("MONGO_TIMEOUT_MS", "2000"))
+    )
+
     forms: tuple[str, ...] = DEFAULT_FORMS
     buyback_tokens: tuple[str, ...] = DEFAULT_BUYBACK_TOKENS
 

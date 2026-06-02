@@ -6,19 +6,34 @@ last 365 days.
 
 Given a ticker it:
 
-1. Resolves the ticker to its SEC CIK.
+1. Resolves the ticker to its SEC CIK (cached in MongoDB; see below).
 2. Pulls the company's recent `10-K`, `10-Q`, and `8-K` filings from EDGAR.
 3. Keeps only filings filed within the last 365 days.
-4. Scans each filing's primary document for buyback-related phrases:
-   - `share repurchase program`
-   - `stock buyback authorization`
-   - `board authorized repurchase`
-5. For each match, returns the filing metadata, a context snippet, and a
+4. Scans each filing's primary document for buyback-related phrases. Issuers
+   word these inconsistently ("share" vs "stock" vs "common stock", "program"
+   vs "authorization" vs "authority"), so matching is deliberately broad and
+   covers variants such as:
+   - `... repurchase program` (e.g. "stock repurchase program")
+   - `repurchase authorization` / `repurchase authority`
+   - `authority to repurchase`, `authorized the repurchase`
+   - `stock buyback` / `share buyback` / `buyback program`
+5. Each match is classified as a **new authorization** (the filing announces a
+   new/expanded buyback) or a **reference** (it merely mentions an existing
+   program, e.g. a quarterly execution disclosure).
+6. For each match, returns the filing metadata, a context snippet, and a
    best-effort parsed authorization amount.
+
+By default only distinct new authorizations are returned. Pass
+`?include_references=true` to also include reference mentions.
+
+Class-share tickers can be written with either a dot or a dash
+(`BRK.B` or `BRK-B`); both resolve to the same company.
 
 ## Requirements
 
 - Python 3.11+ (developed against 3.13)
+- MongoDB (used to cache ticker → CIK lookups). A local instance on the default
+  port with no authentication works out of the box.
 
 ## Setup
 
@@ -38,6 +53,21 @@ export SEC_USER_AGENT="Your Name your.email@example.com"
 
 If unset, a default placeholder is used, but you should provide a real contact
 to avoid being throttled or blocked by the SEC.
+
+### MongoDB
+
+Ticker → CIK lookups are cached in MongoDB so the SEC ticker map isn't fetched
+from EDGAR on every request. On a cache miss the service fetches the map from
+EDGAR, stores it, and serves subsequent lookups from Mongo. If Mongo is
+unreachable the service degrades gracefully and falls back to EDGAR directly.
+
+Defaults point at a local instance; override via environment variables:
+
+```bash
+export MONGO_URI="mongodb://localhost:27017"   # add credentials here if needed
+export MONGO_DB="sec_buybacks"
+export MONGO_TICKERS_COLLECTION="tickers"
+```
 
 ## Run
 
@@ -62,21 +92,30 @@ Interactive API docs are available at http://localhost:8080/docs
   "company_name": "ADOBE INC.",
   "lookback_days": 365,
   "count": 1,
+  "new_authorization_count": 1,
+  "reference_count": 4,
   "announcements": [
     {
-      "announcement_date": "2025-03-12",
-      "report_date": "2025-03-11",
+      "event_type": "new_authorization",
+      "announcement_date": "2026-04-21",
+      "authorization_date": "2026-04-21",
+      "report_date": "2026-04-15",
       "authorization_amount": 25000000000.0,
       "authorization_amount_text": "$25 billion",
-      "amount_context": "...the board authorized a new $25 billion stock repurchase program...",
-      "matched_token": "share repurchase program",
+      "amount_context": "...Adobe announced that our Board of Directors approved a new stock repurchase program granting Adobe authority to repurchase up to $25 billion in common stock through April 30, 2030...",
+      "matched_token": "repurchase program",
       "form": "8-K",
-      "filing_date": "2025-03-12",
-      "filing_url": "https://www.sec.gov/Archives/edgar/data/796343/.../adbe-8k.htm"
+      "filing_date": "2026-04-21",
+      "filing_url": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000101/adbe-20260415.htm"
     }
   ]
 }
 ```
+
+`count` is the number of announcements returned; `new_authorization_count` and
+`reference_count` report the distinct new authorizations and reference mentions
+detected in the window (references are only included in `announcements` when
+`include_references=true`).
 
 ## Tests
 
@@ -88,7 +127,12 @@ pytest
 
 - Only the primary document of each filing is scanned initially. Scanning all
   exhibits can be added later.
-- `announcement_date` defaults to the SEC filing date; `report_date` (the
-  filing's period of report, e.g. for an 8-K) is included when available.
+- `announcement_date` is the board authorization date when one can be parsed
+  from the text; otherwise it falls back to the SEC filing date. `report_date`
+  (the filing's period of report, e.g. for an 8-K) is included when available.
 - Amount parsing is best-effort. `authorization_amount` is `null` when no
-  dollar figure can be confidently associated with a match.
+  dollar figure can be confidently associated with a match (e.g. for
+  references, or programs with no fixed dollar cap such as Berkshire's).
+- Buyback phrase matching is intentionally broad to avoid missing real
+  announcements; classification then separates genuine new authorizations from
+  references. Spot-checking new tickers is recommended.

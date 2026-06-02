@@ -8,6 +8,7 @@ Run with::
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import date
 
 from fastapi import FastAPI, HTTPException
@@ -19,6 +20,7 @@ from app.analysis.extractor import (
     html_to_text,
 )
 from app.config import settings
+from app.db.ticker_store import ticker_store
 from app.edgar.client import EdgarClient, EdgarError
 from app.edgar.filings import fetch_recent_filings
 from app.edgar.tickers import TickerResolver
@@ -30,6 +32,13 @@ from app.models import BuybackAnnouncement, BuybackResponse, Filing
 # quarter plus filing lag.
 _CONTEMPORANEOUS_DAYS = 135
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    yield
+    # Release the Mongo connection pool on shutdown.
+    ticker_store.close()
+
+
 app = FastAPI(
     title="SEC Buyback Detector API",
     version="0.1.0",
@@ -37,6 +46,7 @@ app = FastAPI(
         "Given a ticker, finds share buyback / repurchase announcements made "
         "to the SEC in the last %d days." % settings.lookback_days
     ),
+    lifespan=lifespan,
 )
 
 
