@@ -128,7 +128,8 @@ async def fetch_recent_filings(
     """
 
     forms = forms or settings.forms
-    lookback_days = lookback_days or settings.lookback_days
+    if not isinstance(lookback_days, int):
+        lookback_days = settings.lookback_days
     today = today or date.today()
     cutoff = today - timedelta(days=lookback_days)
     wanted_forms = {f.upper() for f in forms}

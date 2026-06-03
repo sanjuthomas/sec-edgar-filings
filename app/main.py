@@ -316,7 +316,11 @@ async def get_buybacks(
     far back filings are searched (defaults to the configured window).
     """
 
-    effective_lookback = lookback_days or settings.lookback_days
+    effective_lookback = (
+        lookback_days
+        if isinstance(lookback_days, int)
+        else settings.lookback_days
+    )
 
     async with EdgarClient() as client:
         resolver = TickerResolver(client)

@@ -15,6 +15,7 @@ import logging
 from datetime import UTC, datetime
 
 from motor.motor_asyncio import AsyncIOMotorClient
+from pydantic import ValidationError
 from pymongo.errors import PyMongoError
 
 from app.config import settings
@@ -80,7 +81,13 @@ class DocumentStore:
         raw = doc.get("announcements")
         if raw is None:
             return None
-        return [BuybackAnnouncement.model_validate(item) for item in raw]
+        try:
+            return [BuybackAnnouncement.model_validate(item) for item in raw]
+        except ValidationError as exc:
+            logger.warning(
+                "Mongo document cache invalid for %r: %s", document_url, exc
+            )
+            return None
 
     async def put(
         self,
