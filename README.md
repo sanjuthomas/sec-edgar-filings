@@ -1,18 +1,24 @@
 # SEC Buyback Detector API
 
 A small Python (FastAPI) service that, given a stock ticker, finds share
-buyback / stock repurchase announcements a company has made to the SEC in the
-last 365 days.
+buyback / stock repurchase announcements a company has made to the SEC. The
+lookback window defaults to the last 365 days and is configurable up to 5
+years.
 
 Given a ticker it:
 
 1. Resolves the ticker to its SEC CIK (cached in MongoDB; see below).
 2. Pulls the company's recent `10-K`, `10-Q`, and `8-K` filings from EDGAR.
-3. Keeps only filings filed within the last 365 days.
-4. Scans each filing's primary document for buyback-related phrases. Issuers
-   word these inconsistently ("share" vs "stock" vs "common stock", "program"
-   vs "authorization" vs "authority"), so matching is deliberately broad and
-   covers variants such as:
+   For high-volume filers the SEC only inlines roughly the last year of
+   submissions, so older filings are pulled from EDGAR's paginated history
+   files when the lookback window reaches further back.
+3. Keeps only filings filed within the lookback window (365 days by default).
+4. Scans every narrative document in each filing -- the primary document *and*
+   its exhibits -- for buyback-related phrases. Announcements are frequently
+   made in an exhibit (e.g. an earnings press release) rather than the primary
+   document. Issuers word these inconsistently ("share" vs "stock" vs "common
+   stock", "program" vs "authorization" vs "authority"), so matching is
+   deliberately broad and covers variants such as:
    - `... repurchase program` (e.g. "stock repurchase program")
    - `repurchase authorization` / `repurchase authority`
    - `authority to repurchase`, `authorized the repurchase`
@@ -81,6 +87,18 @@ Then:
 curl http://localhost:8080/api/buybacks/ADBE
 ```
 
+### Query parameters
+
+- `include_references` (bool, default `false`): also return reference/execution
+  mentions, not just new authorizations.
+- `lookback_days` (int, default `365`, range `1`–`1825`, i.e. up to 5 years):
+  how many days back to search for filings. Omit to use the default window.
+
+```bash
+# Search only the last 90 days
+curl "http://localhost:8080/api/buybacks/ADBE?lookback_days=90"
+```
+
 Interactive API docs are available at http://localhost:8080/docs
 
 ## Example response
@@ -125,8 +143,11 @@ pytest
 
 ## Notes
 
-- Only the primary document of each filing is scanned initially. Scanning all
-  exhibits can be added later.
+- All narrative documents (primary + exhibits) of each filing are scanned, so
+  authorizations announced in an exhibit (common for banks/financials that
+  announce via earnings press releases) are detected. This means more requests
+  to EDGAR per filing; wide `lookback_days` values on prolific filers can be
+  slow.
 - `announcement_date` is the board authorization date when one can be parsed
   from the text; otherwise it falls back to the SEC filing date. `report_date`
   (the filing's period of report, e.g. for an 8-K) is included when available.

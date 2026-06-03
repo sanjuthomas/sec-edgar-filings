@@ -82,6 +82,13 @@ _EXPANSION_RE = re.compile(
 # to count as authorizing *that* program.
 _AUTH_PROXIMITY = 90
 
+# How close an explicit "approved/authorized ... $X" dollar figure must be to
+# the matched phrase to count as authorizing *that* program. Keeps a genuine
+# "...repurchase program authorizing repurchases of up to $40 billion" while
+# rejecting an unrelated nearby figure (e.g. a dividend amount elsewhere in an
+# earnings release).
+_AUTH_AMOUNT_PROXIMITY = 120
+
 _MONTHS = (
     "January|February|March|April|May|June|July|"
     "August|September|October|November|December"
@@ -122,6 +129,12 @@ _REFERENCE_SIGNALS: dict[str, int] = {
 _REFERENCE_THRESHOLD = 2
 
 _WHITESPACE_RE = re.compile(r"\s+")
+
+# Buyback authorizations are materially large. A parsed "amount" below this is
+# almost certainly a stray figure (a per-share price, a share count, or a
+# scale word that failed to attach, e.g. "$25" from "$25 Billion"), so we
+# discard it rather than report a nonsensical authorization size.
+_MIN_PLAUSIBLE_AMOUNT = 1_000_000.0
 
 
 @dataclass
@@ -269,18 +282,44 @@ def _reference_score(context_lower: str) -> int:
     )
 
 
-def _closest_auth_verb(context: str, anchor: int) -> re.Match[str] | None:
-    """Authorizing verb closest to ``anchor`` (the matched phrase), if any."""
+def _closest_auth_verb(
+    context: str, anchor: int, token_span: tuple[int, int] | None = None
+) -> re.Match[str] | None:
+    """Authorizing verb closest to ``anchor`` (the matched phrase), if any.
+
+    Verbs overlapping ``token_span`` are ignored: the matched phrase itself can
+    contain an auth-verb substring (e.g. "authorization" in "repurchase
+    authorization"), which is the phrase, not an authorizing *action* near it.
+    """
 
     best: tuple[int, re.Match[str]] | None = None
     for m in _AUTH_VERB_RE.finditer(context):
+        if token_span is not None and not (
+            m.end() <= token_span[0] or m.start() >= token_span[1]
+        ):
+            continue
         distance = _distance_to(anchor, m.start(), m.end())
         if best is None or distance < best[0]:
             best = (distance, m)
     return best[1] if best else None
 
 
-def _classify(context: str, anchor: int) -> tuple[str, re.Match[str] | None]:
+def _has_nearby_auth_amount(context: str, anchor: int) -> bool:
+    """Whether an "authorized/approved ... $X" figure sits near ``anchor``."""
+
+    for m in _AUTH_AMOUNT_RE.finditer(context):
+        value, _ = _amount_from_text(m.group(1))
+        if value is None:
+            continue
+        gstart, gend = m.span(1)
+        if _distance_to(anchor, gstart, gend) <= _AUTH_AMOUNT_PROXIMITY:
+            return True
+    return False
+
+
+def _classify(
+    context: str, anchor: int, token_end: int | None = None
+) -> tuple[str, re.Match[str] | None]:
     """Classify an occurrence as a new authorization or a reference.
 
     An occurrence is a *new authorization* only when an authorizing verb
@@ -291,13 +330,31 @@ def _classify(context: str, anchor: int) -> tuple[str, re.Match[str] | None]:
     disclosures -- is treated as a reference.
     """
 
-    auth_verb = _closest_auth_verb(context, anchor)
+    token_span = (anchor, token_end) if token_end is not None else None
+    # Exclude auth-verb substrings inside the matched phrase itself: the noun in
+    # "repurchase authorization" is the phrase, not an authorizing action, so it
+    # must not, on its own, make the phrase look board-approved.
+    auth_verb = _closest_auth_verb(context, anchor, token_span)
     near_auth = (
         auth_verb is not None
         and _distance_to(anchor, auth_verb.start(), auth_verb.end())
         <= _AUTH_PROXIMITY
     )
     reference_dominates = _reference_score(context.lower()) >= _REFERENCE_THRESHOLD
+
+    # An explicit "approved/authorized ... up to $X" right next to the buyback
+    # phrase is the strongest, most unambiguous signal of a new authorization.
+    # It wins even when generic reference phrasing (e.g. "during the") also
+    # appears in the surrounding earnings-release prose, and it is what lets a
+    # phrase like "board authorized repurchase of $1B" qualify on its own.
+    # (Periodic-report restatements that reuse this wording for an old program
+    # are still caught downstream by the filing-aware refinement, which requires
+    # a contemporaneous board-action date.)
+    if _has_nearby_auth_amount(context, anchor):
+        return EVENT_NEW_AUTHORIZATION, auth_verb
+
+    # Otherwise require an authorizing verb near the phrase and no dominant
+    # reference language.
     if near_auth and not reference_dominates:
         return EVENT_NEW_AUTHORIZATION, auth_verb
     return EVENT_REFERENCE, None
@@ -317,7 +374,7 @@ def _build_match(
     local_start = found.start() - ctx_start
     local_end = found.end() - ctx_start
 
-    event_type, auth_verb = _classify(raw_context, local_start)
+    event_type, auth_verb = _classify(raw_context, local_start, local_end)
 
     # Only attribute an authorization amount/date to genuine authorizations.
     # For references the nearby figure is usually an execution amount, not the
@@ -332,6 +389,8 @@ def _build_match(
             amount, amount_text = _nearest_amount(
                 raw_context, local_start, local_end
             )
+        if amount is not None and amount < _MIN_PLAUSIBLE_AMOUNT:
+            amount, amount_text = None, None
         anchor = auth_verb.start() if auth_verb else local_start
         authorization_date = _nearest_date(raw_context, anchor)
         has_expansion = _EXPANSION_RE.search(raw_context) is not None

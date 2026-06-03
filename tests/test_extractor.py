@@ -126,6 +126,40 @@ def test_distinct_new_authorizations_are_kept_separately():
     assert amounts == {5_000_000_000.0, 7_000_000_000.0}
 
 
+def test_board_approved_during_quarter_is_new_authorization():
+    # Mirrors a Goldman Sachs earnings-release exhibit: an explicit board
+    # approval with an amount must win over the "during the" reference phrase.
+    text = (
+        "During the quarter, the Board approved a share repurchase program "
+        "authorizing repurchases of up to $40 billion of common stock."
+    )
+    m = _by_token(find_buyback_matches(text), "share repurchase program")
+    assert m.event_type == EVENT_NEW_AUTHORIZATION
+    assert m.authorization_amount == 40_000_000_000.0
+
+
+def test_program_noun_near_dividend_is_not_new_authorization():
+    # Mirrors a false positive: "repurchase authorization" is a noun phrase
+    # describing an existing program; a nearby dividend figure must not make it
+    # look board-approved.
+    text = (
+        "Announced a $0.50 additional increase in the quarterly dividend to "
+        "$4.50 per share. The firm returned excess capital via buybacks and "
+        "had roughly $32 billion of capacity under its current share "
+        "repurchase authorization."
+    )
+    m = _by_token(find_buyback_matches(text), "repurchase authorization")
+    assert m.event_type == EVENT_REFERENCE
+
+
+def test_implausibly_small_amount_is_discarded():
+    # "$25" stranded from "$25 Billion" (scale word lost in formatting) must
+    # not be reported as an authorization amount.
+    text = "The board approved a new repurchase program of $25 this quarter."
+    m = _by_token(find_buyback_matches(text), "repurchase program")
+    assert m.authorization_amount is None
+
+
 def test_identical_authorization_repeated_in_doc_is_deduped():
     text = (
         "On March 11, 2025, the board authorized a $9 billion share "

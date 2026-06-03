@@ -9,8 +9,29 @@ from app.analysis.extractor import (
     EVENT_REFERENCE,
     Match,
 )
-from app.main import _refine_event_type
-from app.models import Filing
+from app.main import _dedupe_authorizations, _refine_event_type
+from app.models import BuybackAnnouncement, Filing
+
+
+def _announcement(
+    *,
+    filing_url: str,
+    amount: float | None,
+    announcement_date: date,
+    filing_date: date,
+) -> BuybackAnnouncement:
+    return BuybackAnnouncement(
+        event_type=EVENT_NEW_AUTHORIZATION,
+        announcement_date=announcement_date,
+        report_date=None,
+        authorization_amount=amount,
+        authorization_amount_text=None,
+        amount_context="...",
+        matched_token="repurchase program",
+        form="8-K",
+        filing_date=filing_date,
+        filing_url=filing_url,
+    )
 
 
 def _filing(form: str, filing_date: date, report_date: date | None) -> Filing:
@@ -102,3 +123,47 @@ def test_periodic_report_with_stale_board_date_is_reference():
         expansion=False,
     )
     assert _refine_event_type(filing, match) == EVENT_REFERENCE
+
+
+def test_dedupe_collapses_same_filing_to_best_amount():
+    # The same announcement parsed in two documents of one filing: a complete
+    # $25B amount and a stranded null amount. Only the $25B should survive.
+    base = "https://sec.gov/Archives/edgar/data/1/000111/"
+    anns = [
+        _announcement(
+            filing_url=base + "primary.htm",
+            amount=25_000_000_000.0,
+            announcement_date=date(2026, 4, 21),
+            filing_date=date(2026, 4, 21),
+        ),
+        _announcement(
+            filing_url=base + "ex991.htm",
+            amount=None,
+            announcement_date=date(2026, 4, 21),
+            filing_date=date(2026, 4, 21),
+        ),
+    ]
+    result = _dedupe_authorizations(anns)
+    assert len(result) == 1
+    assert result[0].authorization_amount == 25_000_000_000.0
+
+
+def test_dedupe_collapses_same_filing_different_parsed_dates():
+    # Two exhibits of one filing parse the same $40B program but pick different
+    # nearby dates; they must still collapse to a single authorization.
+    base = "https://sec.gov/Archives/edgar/data/2/000222/"
+    anns = [
+        _announcement(
+            filing_url=base + "ex991.htm",
+            amount=40_000_000_000.0,
+            announcement_date=date(2025, 5, 30),
+            filing_date=date(2025, 4, 14),
+        ),
+        _announcement(
+            filing_url=base + "ex992.htm",
+            amount=40_000_000_000.0,
+            announcement_date=date(2025, 4, 14),
+            filing_date=date(2025, 4, 14),
+        ),
+    ]
+    assert len(_dedupe_authorizations(anns)) == 1
