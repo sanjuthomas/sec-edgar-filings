@@ -1,7 +1,8 @@
-# SEC Buyback Detector API
+# SEC EDGAR Filings API
 
-A small Python (FastAPI) service that, given a stock ticker, finds share
-buyback / stock repurchase announcements a company has made to the SEC. The
+A small Python (FastAPI) service (`sec-edgar-filings`) that, given a stock
+ticker, finds share buyback / stock repurchase announcements a company has made
+to the SEC. The
 lookback window defaults to the last 365 days and is configurable up to 5
 years.
 
@@ -44,7 +45,7 @@ Class-share tickers can be written with either a dot or a dash
 ## Setup
 
 ```bash
-cd sec-buybacks
+cd sec-edgar-filings
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -70,7 +71,7 @@ Defaults point at a local instance; override via environment variables:
 
 ```bash
 export MONGO_URI="mongodb://localhost:27017"   # add credentials here if needed
-export MONGO_DB="sec_buybacks"
+export MONGO_DB="sec_edgar_filings"
 export MONGO_TICKERS_COLLECTION="tickers"
 export MONGO_FILINGS_COLLECTION="filings"
 ```

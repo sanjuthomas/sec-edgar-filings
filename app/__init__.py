@@ -1,3 +1,3 @@
-"""SEC Buyback Detector application package."""
+"""SEC EDGAR Filings application package."""
 
 __version__ = "0.1.0"

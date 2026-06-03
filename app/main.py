@@ -1,4 +1,4 @@
-"""FastAPI application exposing the buyback detector.
+"""FastAPI application for SEC EDGAR filing analysis (buyback detection).
 
 Run with::
 
@@ -57,7 +57,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="SEC Buyback Detector API",
+    title="SEC EDGAR Filings API",
     version="0.1.0",
     description=(
         "Given a ticker, finds share buyback / repurchase announcements made "
