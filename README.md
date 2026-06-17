@@ -26,7 +26,8 @@ Class-share tickers can be written with either a dot or a dash (`BRK.B` or
 
 ## Requirements
 
-- Python 3.11+ (developed against 3.13)
+- Python 3.11+ (developed against 3.13), **or** Docker Desktop / Docker Engine
+  with Compose v2
 - MongoDB (local instance on the default port works out of the box)
 - Kafka (optional; required only when `KAFKA_ENABLED=true`)
 
@@ -48,6 +49,70 @@ export SEC_USER_AGENT="Your Name your.email@example.com"
 If unset, a placeholder is used. Provide a real name and contact email to avoid
 being throttled or blocked.
 
+## Docker
+
+The app, MongoDB, and Kafka can run in Docker. Downloaded filings are still written
+to your **local external drive** via a bind mount — not inside the container
+filesystem.
+
+### Prerequisites
+
+- Docker Desktop (or Docker Engine + Compose v2)
+- Transcend drive mounted at `/Volumes/Transcend`
+- On macOS: enable file sharing for `/Volumes` in Docker Desktop
+  (Settings → Resources → File sharing)
+
+### Quick start
+
+```bash
+cp .env.example .env
+# Edit .env — set SEC_USER_AGENT to your real name + email
+
+export EDGAR_HOST_PATH=/Volumes/Transcend/edgar
+
+docker compose up -d
+curl http://localhost:8080/health
+```
+
+`EDGAR_HOST_PATH` is the folder on your Mac that Compose bind-mounts into
+containers. The mount target inside the container is the same path
+(`/Volumes/Transcend/edgar`) so `local_path` values in MongoDB and Kafka stay
+consistent with files on disk.
+
+### Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| `api` | 8080 | FastAPI metadata API |
+| `mongo` | 27017 | MongoDB (data persisted in a Docker volume) |
+| `kafka` | 9092 | Kafka broker (KRaft, single node) |
+
+Inside the stack, the app connects to `mongodb://mongo:27017` and
+`kafka:9092`. Kafka publishing is enabled by default in Compose
+(`KAFKA_ENABLED=true`).
+
+### Batch jobs
+
+One-off job containers use the `jobs` profile:
+
+```bash
+export EDGAR_HOST_PATH=/Volumes/Transcend/edgar
+
+docker compose --profile jobs run --rm refresh-sp500
+docker compose --profile jobs run --rm download-sp500
+
+# Pass job flags after the service name
+docker compose --profile jobs run --rm download-sp500 -- --lookback-days 90 -v
+```
+
+### Stop and rebuild
+
+```bash
+docker compose down          # stop services; Mongo data kept in volume
+docker compose build api     # rebuild after code changes
+docker compose up -d --build # rebuild and restart
+```
+
 ## Configuration
 
 All settings are read from environment variables at process start.
@@ -62,6 +127,7 @@ All settings are read from environment variables at process start.
 | `SEC_TIMEOUT` | `30` | HTTP timeout (seconds) |
 | `SEC_MAX_RETRIES` | `3` | Retries on transient failures |
 | `EDGAR_DOWNLOAD_BASE` | `/Volumes/Transcend/edgar` | Root directory for downloaded files |
+| `EDGAR_HOST_PATH` | `/Volumes/Transcend/edgar` | Host path for the Docker bind mount (Compose only) |
 
 ### MongoDB
 

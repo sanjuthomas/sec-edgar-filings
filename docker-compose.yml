@@ -1,0 +1,103 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  kafka:
+    image: apache/kafka:3.9.0
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings/0.2 (contact: set SEC_USER_AGENT env var)}"
+      MONGO_URI: mongodb://mongo:27017
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      EDGAR_DOWNLOAD_BASE: /Volumes/Transcend/edgar
+    volumes:
+      - ${EDGAR_HOST_PATH:-/Volumes/Transcend/edgar}:/Volumes/Transcend/edgar
+    ports:
+      - "8080:8080"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  download-sp500:
+    build: .
+    profiles: ["jobs"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings/0.2 (contact: set SEC_USER_AGENT env var)}"
+      MONGO_URI: mongodb://mongo:27017
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
+      EDGAR_DOWNLOAD_BASE: /Volumes/Transcend/edgar
+    volumes:
+      - ${EDGAR_HOST_PATH:-/Volumes/Transcend/edgar}:/Volumes/Transcend/edgar
+    depends_on:
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    command: ["python", "-m", "app.jobs.download_sp500"]
+
+  refresh-sp500:
+    build: .
+    profiles: ["jobs"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings/0.2 (contact: set SEC_USER_AGENT env var)}"
+      MONGO_URI: mongodb://mongo:27017
+    depends_on:
+      mongo:
+        condition: service_healthy
+    command: ["python", "-m", "app.jobs.refresh_sp500"]
+
+volumes:
+  mongo_data:

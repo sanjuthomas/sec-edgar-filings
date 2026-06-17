@@ -28,11 +28,12 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="SEC EDGAR Filings API",
+    title="SEC EDGAR Filings",
     version="0.2.0",
     description=(
-        "Given a ticker, returns metadata for SEC filings downloaded to local "
-        "storage."
+        "Optional API for filing metadata downloaded by the S&P 500 batch job: "
+        "primary SEC documents on disk, metadata in MongoDB, and optional "
+        "Kafka events for downstream consumers."
     ),
     lifespan=lifespan,
 )
