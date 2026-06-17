@@ -1,46 +1,34 @@
-# SEC EDGAR Filings API
+# SEC EDGAR Filings
 
-A small Python (FastAPI) service (`sec-edgar-filings`) that, given a stock
-ticker, finds share buyback / stock repurchase announcements a company has made
-to the SEC. The
-lookback window defaults to the last 365 days and is configurable up to 5
-years.
+Python service that downloads recent SEC filings (`10-K`, `10-Q`, `8-K`) from
+EDGAR, stores the primary document on local disk, records metadata in MongoDB,
+and optionally publishes each newly registered filing to Kafka for downstream
+processing (for example, parsing and indexing into a vector database).
 
-Given a ticker it:
+The main workload is a batch job that walks the S&P 500 universe. A small
+optional FastAPI app exposes stored filing metadata by ticker.
 
-1. Resolves the ticker to its SEC CIK (cached in MongoDB; see below).
-2. Pulls the company's recent `10-K`, `10-Q`, and `8-K` filings from EDGAR.
-   For high-volume filers the SEC only inlines roughly the last year of
-   submissions, so older filings are pulled from EDGAR's paginated history
-   files when the lookback window reaches further back.
-3. Keeps only filings filed within the lookback window (365 days by default).
-4. Scans every narrative document in each filing -- the primary document *and*
-   its exhibits -- for buyback-related phrases. Announcements are frequently
-   made in an exhibit (e.g. an earnings press release) rather than the primary
-   document. Issuers word these inconsistently ("share" vs "stock" vs "common
-   stock", "program" vs "authorization" vs "authority"), so matching is
-   deliberately broad and covers variants such as:
-   - `... repurchase program` (e.g. "stock repurchase program")
-   - `repurchase authorization` / `repurchase authority`
-   - `authority to repurchase`, `authorized the repurchase`
-   - `stock buyback` / `share buyback` / `buyback program`
-5. Each match is classified as a **new authorization** (the filing announces a
-   new/expanded buyback) or a **reference** (it merely mentions an existing
-   program, e.g. a quarterly execution disclosure).
-6. For each match, returns the filing metadata, a context snippet, and a
-   best-effort parsed authorization amount.
+## What it does
 
-By default only distinct new authorizations are returned. Pass
-`?include_references=true` to also include reference mentions.
+1. Resolves tickers to SEC CIKs (cached in MongoDB).
+2. Lists recent filings from EDGAR submissions (with paginated history when
+   the lookback window reaches beyond the inline “recent” table).
+3. Downloads each filing’s **primary document** if it is not already recorded
+   in MongoDB.
+4. Writes the file to local disk and upserts metadata in the `filing_metadata`
+   collection.
+5. When Kafka is enabled, publishes an event for every filing newly registered
+   in MongoDB (including when the file already existed on disk but metadata was
+   missing).
 
-Class-share tickers can be written with either a dot or a dash
-(`BRK.B` or `BRK-B`); both resolve to the same company.
+Class-share tickers can be written with either a dot or a dash (`BRK.B` or
+`BRK-B`); both resolve to the same company.
 
 ## Requirements
 
 - Python 3.11+ (developed against 3.13)
-- MongoDB (caches ticker → CIK lookups and scanned filing documents). A local
-  instance on the default port with no authentication works out of the box.
+- MongoDB (local instance on the default port works out of the box)
+- Kafka (optional; required only when `KAFKA_ENABLED=true`)
 
 ## Setup
 
@@ -51,196 +39,251 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The SEC requires a descriptive `User-Agent` for all programmatic requests.
-Set yours via an environment variable (recommended):
+The SEC requires a descriptive `User-Agent` on every programmatic request:
 
 ```bash
 export SEC_USER_AGENT="Your Name your.email@example.com"
 ```
 
-If unset, a default placeholder is used, but you should provide a real contact
-to avoid being throttled or blocked by the SEC.
+If unset, a placeholder is used. Provide a real name and contact email to avoid
+being throttled or blocked.
+
+## Configuration
+
+All settings are read from environment variables at process start.
+
+### SEC / EDGAR
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SEC_USER_AGENT` | placeholder | Required by the SEC |
+| `SEC_LOOKBACK_DAYS` | `365` | Default filing lookback for single-ticker downloads |
+| `SEC_MAX_RPS` | `8` | Max EDGAR requests per second |
+| `SEC_TIMEOUT` | `30` | HTTP timeout (seconds) |
+| `SEC_MAX_RETRIES` | `3` | Retries on transient failures |
+| `EDGAR_DOWNLOAD_BASE` | `/Volumes/Transcend/edgar` | Root directory for downloaded files |
 
 ### MongoDB
 
-The service uses two collections in the same database. If MongoDB is
-unreachable, reads are skipped and writes are no-ops; the API still works by
-calling EDGAR directly (just without the cache speed-up).
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MONGO_URI` | `mongodb://localhost:27017` | Connection string |
+| `MONGO_DB` | `sec_edgar_filings` | Database name |
+| `MONGO_TIMEOUT_MS` | `2000` | Server selection timeout |
+| `MONGO_TICKERS_COLLECTION` | `tickers` | Ticker → CIK cache |
+| `MONGO_FILING_METADATA_COLLECTION` | `filing_metadata` | Downloaded filing metadata |
+| `MONGO_SP500_COLLECTION` | `sp500_constituents` | S&P 500 universe and job state |
+| `MONGO_FILINGS_COLLECTION` | `filings` | Legacy scan cache (buyback analysis) |
 
-Defaults point at a local instance; override via environment variables:
+If MongoDB is unreachable, reads are skipped and writes are no-ops where
+possible; batch jobs continue but without persistence.
 
-```bash
-export MONGO_URI="mongodb://localhost:27017"   # add credentials here if needed
-export MONGO_DB="sec_edgar_filings"
-export MONGO_TICKERS_COLLECTION="tickers"
-export MONGO_FILINGS_COLLECTION="filings"
+### Kafka
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KAFKA_ENABLED` | `false` | Set to `true` to publish filing events |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Broker list |
+| `KAFKA_FILING_DOWNLOADED_TOPIC` | `filings` | Topic for filing metadata events |
+
+Publishing is best-effort: a broker failure is logged and the MongoDB upsert
+still proceeds (non-transactional saga). With `auto.create.topics.enable=true`
+on the broker, the topic is created on first publish.
+
+### Batch jobs
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SP500_DOWNLOAD_LOOKBACK_DAYS` | `30` | Default lookback in backfill mode |
+| `SP500_INCREMENTAL_LOOKBACK_DAYS` | `14` | Minimum window in incremental mode |
+| `SP500_BACKFILL_LOOKBACK_DAYS` | `SEC_LOOKBACK_DAYS` | Max backfill window |
+| `TICKER_RATE_LIMIT_SECONDS` | `60` | Pause between tickers in batch jobs |
+
+On startup, jobs and the API log configured endpoints (SEC, MongoDB, Kafka,
+local disk path, S&P 500 source URL).
+
+## On-disk layout
+
+Each filing is stored as:
+
+```text
+{EDGAR_DOWNLOAD_BASE}/{TICKER}/{accession_no_dashes}/{primary_document}
 ```
 
-#### `tickers` collection — ticker → CIK
+Example:
 
-Used once per API request to resolve the symbol before any filing work.
+```text
+/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm
+```
+
+## MongoDB collections
+
+### `tickers` — ticker → CIK
 
 | Field | Description |
 |-------|-------------|
-| `_id` | Upper-case ticker (SEC dash form for class shares, e.g. `BRK-B`) |
+| `_id` | Upper-case ticker |
 | `cik` | Zero-padded 10-digit CIK |
 | `company_name` | Issuer name from the SEC ticker map |
 
-- **Cache hit:** ticker is found in Mongo → no `company_tickers.json` download.
-- **Cache miss:** fetch the full SEC ticker map from EDGAR, upsert all rows into
-  `tickers`, then resolve the requested symbol.
-- **Not cached:** unknown tickers (404); the map is not re-fetched on every
-  request once populated.
+### `filing_metadata` — downloaded filings
 
-#### `filings` collection — scanned EDGAR documents
-
-Each row is one **narrative document** (primary filing HTML or an exhibit), not
-an entire SEC submission. The document’s SEC archives URL is the primary key.
-Filings are treated as immutable; corrections arrive as new filings with new
-URLs, so scan results are stored indefinitely.
+Keyed by accession number. One row per downloaded primary document.
 
 | Field | Description |
 |-------|-------------|
-| `_id` | Full document URL (e.g. `https://www.sec.gov/Archives/edgar/data/.../ex99.htm`) |
-| `ticker` | Request ticker (upper-case), indexed |
-| `cik` | Company CIK for that scan, indexed |
-| `announcements` | Extracted `BuybackAnnouncement` objects (may be `[]`) |
-| `processed_at` | UTC timestamp when the document was last scanned |
+| `_id` | Accession number (e.g. `0000886982-26-000045`) |
+| `ticker` | Upper-case ticker |
+| `company_name` | Issuer name |
+| `filing_date` | SEC filing date |
+| `form` | `10-K`, `10-Q`, or `8-K` |
+| `accession_number` | Same as `_id` |
+| `local_path` | Absolute path to the file on disk |
+| `document_url` | SEC archives URL |
+| `downloaded_at` | UTC timestamp when metadata was recorded |
 
-Indexes: `ticker`, `cik` (created automatically on first read/write).
+A filing is skipped when its accession number already exists in this collection.
 
-- **Cache hit:** document URL exists in `filings` → return stored
-  `announcements`; **no** HTML download from EDGAR.
-- **Cache miss:** download the document, run phrase extraction and
-  classification, then upsert into `filings` (including empty results).
-- **Not cached:** transient download errors (network, HTTP errors) — the next
-  request will retry EDGAR.
-- **Always from EDGAR (even when Mongo is warm):**
-  - `submissions/CIK{n}.json` (and paginated history files when `lookback_days`
-    reaches beyond the inline “recent” table) — to discover filings in the
-    date window and detect **new** submissions since the last visit.
-  - `index.json` per filing directory — to list narrative documents (primary +
-    exhibits) to scan.
+### `sp500_constituents` — S&P 500 universe
 
-So repeat requests for the same ticker are fast mainly because **document HTML
-is not re-fetched**; listing filings from EDGAR is still done to pick up new
-8-Ks / 10-Qs.
+Stores active constituents and per-ticker download job state (`last_download_at`,
+`last_download_status`, counts, errors).
+
+## Kafka events
+
+Published when a filing is **newly registered** in `filing_metadata` (before the
+MongoDB upsert). Message key: `accession_number`. Message value (JSON):
+
+```json
+{
+  "event_type": "filing.downloaded",
+  "schema_version": 1,
+  "ticker": "GS",
+  "company_name": "GOLDMAN SACHS GROUP INC",
+  "filing_date": "2026-05-15",
+  "form": "10-Q",
+  "accession_number": "0000886982-26-000045",
+  "local_path": "/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm",
+  "document_url": "https://www.sec.gov/Archives/edgar/data/...",
+  "downloaded_at": "2026-06-16T17:19:53.857546Z"
+}
+```
+
+Successful publishes are logged with topic, partition, offset, ticker, and
+`local_path`.
+
+## Batch jobs
+
+### Refresh S&P 500 universe
+
+Fetches the current constituent list from Wikipedia and upserts MongoDB:
+
+```bash
+python -m app.jobs.refresh_sp500
+```
+
+### Download filings for S&P 500
+
+Refreshes the universe (unless `--skip-refresh`), then downloads recent filings
+for each active ticker:
+
+```bash
+# Default: backfill mode, 30-day lookback per ticker
+python -m app.jobs.download_sp500
+
+# With Kafka publishing
+KAFKA_ENABLED=true python -m app.jobs.download_sp500
+
+# Incremental mode (widens window since last successful download per ticker)
+python -m app.jobs.download_sp500 --mode incremental
+
+# Resume after a failure
+python -m app.jobs.download_sp500 --skip-refresh --resume-from MSFT
+
+# Override lookback for every ticker
+python -m app.jobs.download_sp500 --lookback-days 90
+
+# Debug logging
+python -m app.jobs.download_sp500 -v
+```
+
+The job prints a JSON summary (`Sp500DownloadResult`) when it finishes.
 
 ### Data flow
 
 ```mermaid
 sequenceDiagram
-    participant Browser
-    participant API as FastAPI
-    participant Tickers as Mongo tickers
-    participant Filings as Mongo filings
+    participant Job as download_sp500
+    participant Wiki as Wikipedia
+    participant Mongo as MongoDB
     participant EDGAR as SEC EDGAR
+    participant Disk as Local disk
+    participant Kafka as Kafka
 
-    Browser->>API: GET /api/buybacks/{ticker}
+    Job->>Mongo: refresh / load S&P 500 tickers
+    Job->>Wiki: constituent table (unless --skip-refresh)
+    Wiki-->>Job: tickers
+    Job->>Mongo: upsert sp500_constituents
 
-    API->>Tickers: find ticker
-    alt ticker cache hit
-        Tickers-->>API: cik, company_name
-    else ticker cache miss
-        API->>EDGAR: company_tickers.json
-        EDGAR-->>API: full ticker map
-        API->>Tickers: upsert map
-        Tickers-->>API: cik, company_name
-    end
+    loop each ticker
+        Job->>Mongo: resolve CIK (tickers)
+        Job->>EDGAR: submissions JSON (+ history if needed)
+        EDGAR-->>Job: filings in lookback window
 
-    API->>EDGAR: submissions JSON (+ history files if needed)
-    EDGAR-->>API: filings in lookback window
-
-    loop each filing in window
-        API->>EDGAR: filing directory index.json
-        EDGAR-->>API: document URLs to scan
-
-        loop each narrative document URL
-            API->>Filings: find by document URL (_id)
-            alt filings cache hit
-                Filings-->>API: announcements (possibly empty)
-            else filings cache miss
-                API->>EDGAR: GET document HTML
-                EDGAR-->>API: HTML
-                API->>API: extract and classify matches
-                API->>Filings: upsert ticker, cik, announcements
+        loop each filing
+            Job->>Mongo: exists(accession)?
+            alt already in filing_metadata
+                Mongo-->>Job: skip
+            else new accession
+                Job->>EDGAR: GET primary document (if not on disk)
+                EDGAR-->>Job: document bytes
+                Job->>Disk: write file (or reuse existing path)
+                Job->>Kafka: publish filing.downloaded (if enabled)
+                Job->>Mongo: upsert filing_metadata
             end
         end
     end
-
-    API->>API: dedupe and build response
-    API-->>Browser: BuybackResponse JSON
 ```
 
-**When Mongo is used vs skipped**
+## API (optional)
 
-| Step | Uses Mongo? | Uses EDGAR? |
-|------|-------------|-------------|
-| Resolve ticker → CIK | Yes (`tickers`), on hit | Only on ticker cache miss |
-| List filings in lookback | No | Always |
-| List documents in a filing | No | Always (`index.json`) |
-| Scan document text | Yes (`filings`), on hit | Only on document cache miss |
-| Failed document download | No write to `filings` | Retry on next request |
-
-## Run
+The API serves metadata already stored by the download jobs. It does not fetch
+from EDGAR on request.
 
 ```bash
 uvicorn app.main:app --port 8080
 ```
 
-Then:
-
 ```bash
-curl http://localhost:8080/api/buybacks/ADBE
+curl http://localhost:8080/health
+curl http://localhost:8080/api/filings/GS
 ```
 
-### Query parameters
+Interactive docs: http://localhost:8080/docs
 
-- `include_references` (bool, default `false`): also return reference/execution
-  mentions, not just new authorizations.
-- `lookback_days` (int, default `365`, range `1`–`1825`, i.e. up to 5 years):
-  how many days back to search for filings. Omit to use the default window.
-
-```bash
-# Search only the last 90 days
-curl "http://localhost:8080/api/buybacks/ADBE?lookback_days=90"
-```
-
-Interactive API docs are available at http://localhost:8080/docs
-
-## Example response
+### Example response
 
 ```json
 {
-  "ticker": "ADBE",
-  "cik": "0000796343",
-  "company_name": "ADOBE INC.",
-  "lookback_days": 365,
+  "ticker": "GS",
+  "company_name": "GOLDMAN SACHS GROUP INC",
   "count": 1,
-  "new_authorization_count": 1,
-  "reference_count": 4,
-  "announcements": [
+  "filings": [
     {
-      "event_type": "new_authorization",
-      "announcement_date": "2026-04-21",
-      "authorization_date": "2026-04-21",
-      "report_date": "2026-04-15",
-      "authorization_amount": 25000000000.0,
-      "authorization_amount_text": "$25 billion",
-      "amount_context": "...Adobe announced that our Board of Directors approved a new stock repurchase program granting Adobe authority to repurchase up to $25 billion in common stock through April 30, 2030...",
-      "matched_token": "repurchase program",
-      "form": "8-K",
-      "filing_date": "2026-04-21",
-      "filing_url": "https://www.sec.gov/Archives/edgar/data/796343/000079634326000101/adbe-20260415.htm"
+      "ticker": "GS",
+      "company_name": "GOLDMAN SACHS GROUP INC",
+      "filing_date": "2026-05-15",
+      "form": "10-Q",
+      "accession_number": "0000886982-26-000045",
+      "local_path": "/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm",
+      "document_url": "https://www.sec.gov/Archives/edgar/data/886982/000088698226000045/gs-20260515.htm",
+      "downloaded_at": "2026-06-16T17:19:53.857546Z"
     }
   ]
 }
 ```
 
-`count` is the number of announcements returned; `new_authorization_count` and
-`reference_count` report the distinct new authorizations and reference mentions
-detected in the window (references are only included in `announcements` when
-`include_references=true`).
+Returns `404` when no metadata exists for the ticker.
 
 ## Tests
 
@@ -250,18 +293,10 @@ pytest
 
 ## Notes
 
-- All narrative documents (primary + exhibits) of each filing are scanned, so
-  authorizations announced in an exhibit (common for banks/financials that
-  announce via earnings press releases) are detected. The first scan of a ticker
-  can issue many EDGAR requests; later scans reuse the `filings` collection and
-  mostly avoid re-downloading HTML. Wide `lookback_days` on prolific filers can
-  still be slow on the first run.
-- `announcement_date` is the board authorization date when one can be parsed
-  from the text; otherwise it falls back to the SEC filing date. `report_date`
-  (the filing's period of report, e.g. for an 8-K) is included when available.
-- Amount parsing is best-effort. `authorization_amount` is `null` when no
-  dollar figure can be confidently associated with a match (e.g. for
-  references, or programs with no fixed dollar cap such as Berkshire's).
-- Buyback phrase matching is intentionally broad to avoid missing real
-  announcements; classification then separates genuine new authorizations from
-  references. Spot-checking new tickers is recommended.
+- Only the **primary document** per filing is downloaded, not exhibits.
+- Clearing `filing_metadata` without deleting on-disk files will re-register
+  metadata and republish Kafka events on the next job run (files are reused).
+- Kafka publishing requires `KAFKA_ENABLED=true` on the process that runs the
+  download job (or API lifespan, if you use the API with Kafka enabled).
+- The `app/scan` and `app/analysis` packages contain buyback-phrase extraction
+  code used by an older scan path; they are not exposed by the current API.

@@ -1,40 +1,28 @@
-"""HTTP-level tests for the buybacks API."""
+"""HTTP-level tests for the filings API."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
-from app.edgar.client import EdgarError
 from app.main import app
-from app.models import BuybackAnnouncement, Filing
+from app.models import FilingMetadata
 
-FILING = Filing(
-    form="8-K",
-    filing_date=date(2026, 4, 21),
-    report_date=date(2026, 4, 15),
-    accession_number="0000796343-26-000101",
-    primary_document="adbe-20260415.htm",
+
+FILING = FilingMetadata(
+    ticker="GS",
+    company_name="GOLDMAN SACHS GROUP INC",
+    filing_date=date(2026, 5, 15),
+    form="10-Q",
+    accession_number="0000886982-26-000045",
+    local_path="/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm",
     document_url=(
-        "https://www.sec.gov/Archives/edgar/data/796343/"
-        "000079634326000101/adbe-20260415.htm"
+        "https://www.sec.gov/Archives/edgar/data/886982/"
+        "000088698226000045/gs-20260515.htm"
     ),
-)
-
-ANNOUNCEMENT = BuybackAnnouncement(
-    event_type="new_authorization",
-    announcement_date=date(2026, 4, 21),
-    authorization_date=date(2026, 4, 21),
-    report_date=date(2026, 4, 15),
-    authorization_amount=25_000_000_000.0,
-    authorization_amount_text="$25 billion",
-    amount_context="approved a new stock repurchase program",
-    matched_token="repurchase program",
-    form="8-K",
-    filing_date=date(2026, 4, 21),
-    filing_url=FILING.document_url,
+    downloaded_at=datetime(2026, 6, 1, tzinfo=UTC),
 )
 
 
@@ -45,49 +33,29 @@ def test_health_returns_ok():
     assert response.json() == {"status": "ok"}
 
 
-def test_get_buybacks_returns_200_with_mocked_edgar():
+def test_get_filings_returns_200_with_stored_metadata():
     client = TestClient(app)
-    mock_client = AsyncMock()
-    mock_resolver = AsyncMock()
-    mock_resolver.resolve.return_value = ("0000796343", "ADOBE INC.")
-
-    with (
-        patch("app.main.EdgarClient", return_value=mock_client),
-        patch("app.main.TickerResolver", return_value=mock_resolver),
-        patch(
-            "app.main.fetch_recent_filings",
-            AsyncMock(return_value=[FILING]),
-        ),
-        patch(
-            "app.main._scan_filing",
-            AsyncMock(return_value=[ANNOUNCEMENT]),
-        ),
+    with patch(
+        "app.main.filing_store.get_by_ticker",
+        AsyncMock(return_value=[FILING]),
     ):
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        response = client.get("/api/buybacks/ADBE")
+        response = client.get("/api/filings/GS")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["ticker"] == "ADBE"
-    assert body["cik"] == "0000796343"
+    assert body["ticker"] == "GS"
     assert body["count"] == 1
-    assert body["announcements"][0]["event_type"] == "new_authorization"
+    assert body["filings"][0]["form"] == "10-Q"
+    assert body["filings"][0]["company_name"] == "GOLDMAN SACHS GROUP INC"
 
 
-def test_get_buybacks_unknown_ticker_returns_404():
+def test_get_filings_unknown_ticker_returns_404():
     client = TestClient(app)
-    mock_client = AsyncMock()
-    mock_resolver = AsyncMock()
-    mock_resolver.resolve.side_effect = EdgarError("Unknown ticker: 'ZZZZ'")
-
-    with (
-        patch("app.main.EdgarClient", return_value=mock_client),
-        patch("app.main.TickerResolver", return_value=mock_resolver),
+    with patch(
+        "app.main.filing_store.get_by_ticker",
+        AsyncMock(return_value=[]),
     ):
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
-        response = client.get("/api/buybacks/ZZZZ")
+        response = client.get("/api/filings/ZZZZ")
 
     assert response.status_code == 404
-    assert "Unknown ticker" in response.json()["detail"]
+    assert "No filings found" in response.json()["detail"]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
@@ -58,18 +58,86 @@ class BuybackAnnouncement(BaseModel):
     filing_url: str
 
 
-class BuybackResponse(BaseModel):
-    """Top-level API response for a ticker."""
+class Sp500Constituent(BaseModel):
+    """One S&P 500 member as published in the index constituents table."""
+
+    ticker: str
+    company_name: str
+
+
+class UniverseRefreshResult(BaseModel):
+    """Summary of a universe refresh run."""
+
+    source: str
+    source_url: str
+    refreshed_at: datetime
+    active_count: int
+    added: list[str]
+    removed: list[str]
+
+
+class ScanTickerResult(BaseModel):
+    """Outcome of scanning one ticker over a lookback window."""
 
     ticker: str
     cik: str
-    company_name: str | None = None
+    company_name: str
     lookback_days: int
-    count: int = Field(..., description="Number of announcements returned.")
-    new_authorization_count: int = Field(
-        ..., description="Distinct new authorizations detected in the window."
-    )
-    reference_count: int = Field(
-        ..., description="Reference/execution mentions detected in the window."
-    )
-    announcements: list[BuybackAnnouncement]
+    filings_scanned: int
+    new_authorizations: list[BuybackAnnouncement]
+    references: list[BuybackAnnouncement]
+
+    @property
+    def new_authorization_count(self) -> int:
+        return len(self.new_authorizations)
+
+    @property
+    def reference_count(self) -> int:
+        return len(self.references)
+
+
+class FilingMetadata(BaseModel):
+    """Metadata for one downloaded SEC filing."""
+
+    ticker: str
+    company_name: str
+    filing_date: date
+    form: str
+    accession_number: str
+    local_path: str
+    document_url: str
+    downloaded_at: datetime | None = None
+
+
+class FilingsResponse(BaseModel):
+    """Top-level API response listing filings for a ticker."""
+
+    ticker: str
+    company_name: str | None = None
+    count: int
+    filings: list[FilingMetadata]
+
+
+class DownloadTickerResult(BaseModel):
+    """Outcome of downloading filings for one ticker."""
+
+    ticker: str
+    cik: str
+    company_name: str
+    lookback_days: int
+    filings_found: int
+    filings_downloaded: int
+    filings_skipped: int
+
+
+class Sp500DownloadResult(BaseModel):
+    """Summary of one S&P 500 download batch run."""
+
+    mode: str
+    universe_refresh: UniverseRefreshResult | None = None
+    tickers_total: int
+    tickers_processed: int
+    tickers_failed: int
+    failed_tickers: list[str]
+    total_filings_downloaded: int
+    total_filings_skipped: int

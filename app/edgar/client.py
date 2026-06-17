@@ -90,3 +90,7 @@ class EdgarClient:
     async def get_text(self, url: str) -> str:
         response = await self._get(url)
         return response.text
+
+    async def get_bytes(self, url: str) -> bytes:
+        response = await self._get(url)
+        return response.content

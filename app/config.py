@@ -37,7 +37,7 @@ DEFAULT_BUYBACK_TOKENS: tuple[str, ...] = (
     "share repurchase program",
 )
 
-# SEC forms we care about for buyback announcements.
+# SEC forms to download and index.
 DEFAULT_FORMS: tuple[str, ...] = ("10-K", "10-Q", "8-K")
 
 
@@ -89,10 +89,65 @@ class Settings:
             "MONGO_FILINGS_COLLECTION", "filings"
         )
     )
+    mongo_sp500_collection: str = field(
+        default_factory=lambda: os.environ.get(
+            "MONGO_SP500_COLLECTION", "sp500_constituents"
+        )
+    )
     # How long to wait for the Mongo server before giving up and falling back to
     # a direct EDGAR call (milliseconds).
     mongo_timeout_ms: int = field(
         default_factory=lambda: int(os.environ.get("MONGO_TIMEOUT_MS", "2000"))
+    )
+    sp500_incremental_lookback_days: int = field(
+        default_factory=lambda: int(
+            os.environ.get("SP500_INCREMENTAL_LOOKBACK_DAYS", "14")
+        )
+    )
+    sp500_backfill_lookback_days: int = field(
+        default_factory=lambda: int(
+            os.environ.get(
+                "SP500_BACKFILL_LOOKBACK_DAYS",
+                os.environ.get("SEC_LOOKBACK_DAYS", "365"),
+            )
+        )
+    )
+    sp500_download_lookback_days: int = field(
+        default_factory=lambda: int(
+            os.environ.get("SP500_DOWNLOAD_LOOKBACK_DAYS", "30")
+        )
+    )
+    edgar_download_base: str = field(
+        default_factory=lambda: os.environ.get(
+            "EDGAR_DOWNLOAD_BASE", "/Volumes/Transcend/edgar"
+        )
+    )
+    mongo_filing_metadata_collection: str = field(
+        default_factory=lambda: os.environ.get(
+            "MONGO_FILING_METADATA_COLLECTION", "filing_metadata"
+        )
+    )
+    # Minimum seconds between processing each ticker in batch jobs.
+    ticker_rate_limit_seconds: float = field(
+        default_factory=lambda: float(
+            os.environ.get("TICKER_RATE_LIMIT_SECONDS", "60")
+        )
+    )
+
+    # Kafka events emitted after a filing document is written to disk.
+    kafka_enabled: bool = field(
+        default_factory=lambda: os.environ.get("KAFKA_ENABLED", "false").lower()
+        in ("1", "true", "yes")
+    )
+    kafka_bootstrap_servers: str = field(
+        default_factory=lambda: os.environ.get(
+            "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"
+        )
+    )
+    kafka_filing_downloaded_topic: str = field(
+        default_factory=lambda: os.environ.get(
+            "KAFKA_FILING_DOWNLOADED_TOPIC", "filings"
+        )
     )
 
     forms: tuple[str, ...] = DEFAULT_FORMS
