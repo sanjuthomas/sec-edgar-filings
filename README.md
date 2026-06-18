@@ -69,6 +69,8 @@ cp .env.example .env
 # Edit .env — set SEC_USER_AGENT to your real name + email
 
 export EDGAR_HOST_PATH=/Volumes/Transcend/edgar
+export MONGO_HOST_PATH=/Volumes/Transcend/mongo-data
+export KAFKA_HOST_PATH=/Volumes/Transcend/kafka-data
 
 docker compose up -d
 curl http://localhost:8080/health
@@ -79,13 +81,17 @@ containers. The mount target inside the container is the same path
 (`/Volumes/Transcend/edgar`) so `local_path` values in MongoDB and Kafka stay
 consistent with files on disk.
 
+MongoDB and Kafka data are also stored on the Transcend drive via bind mounts
+(`MONGO_HOST_PATH`, `KAFKA_HOST_PATH`). Create those directories before the
+first `docker compose up` if they do not exist yet.
+
 ### Services
 
 | Service | Port | Description |
 |---------|------|-------------|
 | `api` | 8080 | FastAPI metadata API |
-| `mongo` | 27017 | MongoDB (data persisted in a Docker volume) |
-| `kafka` | 9092 | Kafka broker (KRaft, single node) |
+| `mongo` | 27017 | MongoDB (data on `MONGO_HOST_PATH`, default `/Volumes/Transcend/mongo-data`) |
+| `kafka` | 9092 | Kafka broker (KRaft; data on `KAFKA_HOST_PATH`, default `/Volumes/Transcend/kafka-data`) |
 
 Inside the stack, the app connects to `mongodb://mongo:27017` and
 `kafka:9092`. Kafka publishing is enabled by default in Compose
@@ -97,6 +103,8 @@ One-off job containers use the `jobs` profile:
 
 ```bash
 export EDGAR_HOST_PATH=/Volumes/Transcend/edgar
+export MONGO_HOST_PATH=/Volumes/Transcend/mongo-data
+export KAFKA_HOST_PATH=/Volumes/Transcend/kafka-data
 
 docker compose --profile jobs run --rm refresh-sp500
 docker compose --profile jobs run --rm download-sp500
@@ -108,7 +116,7 @@ docker compose --profile jobs run --rm download-sp500 -- --lookback-days 90 -v
 ### Stop and rebuild
 
 ```bash
-docker compose down          # stop services; Mongo data kept in volume
+docker compose down          # stop services; data kept on Transcend bind mounts
 docker compose build api     # rebuild after code changes
 docker compose up -d --build # rebuild and restart
 ```
@@ -128,6 +136,8 @@ All settings are read from environment variables at process start.
 | `SEC_MAX_RETRIES` | `3` | Retries on transient failures |
 | `EDGAR_DOWNLOAD_BASE` | `/Volumes/Transcend/edgar` | Root directory for downloaded files |
 | `EDGAR_HOST_PATH` | `/Volumes/Transcend/edgar` | Host path for the Docker bind mount (Compose only) |
+| `MONGO_HOST_PATH` | `/Volumes/Transcend/mongo-data` | Host path for MongoDB data (Compose only) |
+| `KAFKA_HOST_PATH` | `/Volumes/Transcend/kafka-data` | Host path for Kafka data (Compose only) |
 
 ### MongoDB
 

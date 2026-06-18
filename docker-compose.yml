@@ -5,7 +5,7 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - mongo_data:/data/db
+      - ${MONGO_HOST_PATH:-/Volumes/Transcend/mongo-data}:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
@@ -29,6 +29,9 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+    volumes:
+      - ${KAFKA_HOST_PATH:-/Volumes/Transcend/kafka-data}:/tmp/kraft-combined-logs
     ports:
       - "9092:9092"
     healthcheck:
@@ -98,6 +101,3 @@ services:
       mongo:
         condition: service_healthy
     command: ["python", "-m", "app.jobs.refresh_sp500"]
-
-volumes:
-  mongo_data:
