@@ -14,7 +14,7 @@ on:
         type: string
 
 env:
-  IMAGE_NAME: sec-edgar-filings
+  IMAGE_NAME: sec-edgar-filings-crawler
 
 jobs:
   publish:

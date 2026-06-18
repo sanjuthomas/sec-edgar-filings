@@ -1,4 +1,4 @@
-# SEC EDGAR Filings
+# SEC EDGAR Filings Crawler
 
 Python service that downloads recent SEC filings (`10-K`, `10-Q`, `8-K`) from
 EDGAR, stores the primary document on local disk, records metadata in MongoDB,
@@ -34,7 +34,7 @@ Class-share tickers can be written with either a dot or a dash (`BRK.B` or
 ## Setup
 
 ```bash
-cd sec-edgar-filings
+cd sec-edgar-filings-crawler
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -145,7 +145,7 @@ All settings are read from environment variables at process start.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MONGO_URI` | `mongodb://localhost:27017` | Connection string |
-| `MONGO_DB` | `sec_edgar_filings` | Database name |
+| `MONGO_DB` | `sec_edgar_filings_crawler` | Database name |
 | `MONGO_TIMEOUT_MS` | `2000` | Server selection timeout |
 | `MONGO_TICKERS_COLLECTION` | `tickers` | Ticker → CIK cache |
 | `MONGO_FILING_METADATA_COLLECTION` | `filing_metadata` | Downloaded filing metadata |

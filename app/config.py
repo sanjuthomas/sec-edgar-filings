@@ -48,7 +48,7 @@ class Settings:
     user_agent: str = field(
         default_factory=lambda: os.environ.get(
             "SEC_USER_AGENT",
-            "sec-edgar-filings/0.1 (contact: set SEC_USER_AGENT env var)",
+            "sec-edgar-filings-crawler/0.1 (contact: set SEC_USER_AGENT env var)",
         )
     )
     lookback_days: int = field(
@@ -77,7 +77,7 @@ class Settings:
         )
     )
     mongo_db: str = field(
-        default_factory=lambda: os.environ.get("MONGO_DB", "sec_edgar_filings")
+        default_factory=lambda: os.environ.get("MONGO_DB", "sec_edgar_filings_crawler")
     )
     mongo_tickers_collection: str = field(
         default_factory=lambda: os.environ.get(

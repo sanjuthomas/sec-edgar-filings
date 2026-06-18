@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 def log_startup_config() -> None:
     """Log external services and storage configured for this process."""
 
-    logger.info("=== SEC EDGAR Filings startup ===")
+    logger.info("=== SEC EDGAR Filings Crawler startup ===")
     logger.info(
         "SEC EDGAR: submissions=%s history=%s archives=%s tickers=%s",
         SUBMISSIONS_URL,

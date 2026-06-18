@@ -1,3 +1,5 @@
+name: sec-edgar-filings-crawler
+
 services:
   mongo:
     image: mongo:7
@@ -47,12 +49,13 @@ services:
 
   api:
     build: .
+    image: sec-edgar-filings-crawler:latest
     restart: unless-stopped
     env_file:
       - path: .env
         required: false
     environment:
-      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings/0.2 (contact: set SEC_USER_AGENT env var)}"
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings-crawler/0.2 (contact: set SEC_USER_AGENT env var)}"
       MONGO_URI: mongodb://mongo:27017
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
@@ -69,12 +72,13 @@ services:
 
   download-sp500:
     build: .
+    image: sec-edgar-filings-crawler:latest
     profiles: ["jobs"]
     env_file:
       - path: .env
         required: false
     environment:
-      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings/0.2 (contact: set SEC_USER_AGENT env var)}"
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings-crawler/0.2 (contact: set SEC_USER_AGENT env var)}"
       MONGO_URI: mongodb://mongo:27017
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
@@ -90,12 +94,13 @@ services:
 
   refresh-sp500:
     build: .
+    image: sec-edgar-filings-crawler:latest
     profiles: ["jobs"]
     env_file:
       - path: .env
         required: false
     environment:
-      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings/0.2 (contact: set SEC_USER_AGENT env var)}"
+      SEC_USER_AGENT: "${SEC_USER_AGENT:-sec-edgar-filings-crawler/0.2 (contact: set SEC_USER_AGENT env var)}"
       MONGO_URI: mongodb://mongo:27017
     depends_on:
       mongo:

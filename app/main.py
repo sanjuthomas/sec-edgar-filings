@@ -37,7 +37,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="SEC EDGAR Filings",
+    title="SEC EDGAR Filings Crawler",
     version="0.4.0",
     description=(
         "API and UI for S&P 500 filing downloads: primary SEC documents on "
