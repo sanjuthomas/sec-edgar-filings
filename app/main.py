@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api import browse as browse_api
 from app.api import config as config_api
 from app.api import jobs as jobs_api
 from app.api import universe as universe_api
@@ -48,6 +49,7 @@ app = FastAPI(
 app.include_router(jobs_api.router)
 app.include_router(universe_api.router)
 app.include_router(config_api.router)
+app.include_router(browse_api.router)
 
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -64,6 +66,14 @@ async def index() -> FileResponse:
     if not index_path.is_file():
         raise HTTPException(status_code=404, detail="UI not found")
     return FileResponse(index_path)
+
+
+@app.get("/browse")
+async def browse_page() -> FileResponse:
+    browse_path = STATIC_DIR / "browse.html"
+    if not browse_path.is_file():
+        raise HTTPException(status_code=404, detail="Browse UI not found")
+    return FileResponse(browse_path)
 
 
 @app.get("/api/filings/{ticker}", response_model=FilingsResponse)

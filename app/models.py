@@ -205,3 +205,41 @@ class RuntimeConfig(BaseModel):
     ticker_rate_limit_seconds: float
     default_lookback_days: int
     sp500_download_lookback_days: int
+
+
+class FileSystemEntry(BaseModel):
+    """One file under a ticker's download directory."""
+
+    relative_path: str
+    accession_dir: str
+    name: str
+    size_bytes: int
+    modified_at: datetime
+
+
+class FilesystemBrowseResult(BaseModel):
+    """On-disk filing files for one ticker."""
+
+    base_path: str
+    ticker_path: str
+    exists: bool
+    accession_count: int
+    file_count: int
+    entries: list[FileSystemEntry]
+
+
+class MongoBrowseResult(BaseModel):
+    """Filing metadata documents for one ticker."""
+
+    collection: str
+    count: int
+    filings: list[FilingMetadata]
+
+
+class TickerBrowseResponse(BaseModel):
+    """Combined read-only view of MongoDB and filesystem data for a ticker."""
+
+    ticker: str
+    company_name: str | None = None
+    mongo: MongoBrowseResult
+    filesystem: FilesystemBrowseResult

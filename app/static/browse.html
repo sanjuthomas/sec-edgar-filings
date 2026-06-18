@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Browse — SEC EDGAR Filings</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>SEC EDGAR Filings</h1>
+      <p class="subtitle">Read-only ticker browser</p>
+    </div>
+    <nav class="nav-links">
+      <a href="/browse" class="nav-link active">Browse</a>
+      <a href="/" class="nav-link">Admin</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <section class="card">
+      <h2>Look up ticker</h2>
+      <p class="muted">View stored filing metadata from MongoDB and downloaded files on disk.</p>
+      <form id="browse-form" class="form-grid browse-form">
+        <label>
+          Ticker
+          <input type="text" id="browse-ticker" placeholder="AAPL" required maxlength="10" autofocus />
+        </label>
+        <button type="submit" class="btn primary">Search</button>
+      </form>
+    </section>
+
+    <section class="card hidden" id="results-section">
+      <div class="card-header">
+        <div>
+          <h2 id="results-title">Results</h2>
+          <p class="muted results-subtitle" id="results-subtitle"></p>
+        </div>
+      </div>
+
+      <div class="browse-summary" id="browse-summary"></div>
+
+      <h3 class="section-heading">MongoDB — <code id="mongo-collection"></code></h3>
+      <div class="ticker-table-wrap">
+        <table class="ticker-table">
+          <thead>
+            <tr>
+              <th>Form</th>
+              <th>Filing date</th>
+              <th>Accession</th>
+              <th>Downloaded</th>
+              <th>Local path</th>
+            </tr>
+          </thead>
+          <tbody id="mongo-table-body"></tbody>
+        </table>
+      </div>
+      <p class="muted empty-message hidden" id="mongo-empty">No filing metadata in MongoDB for this ticker.</p>
+
+      <h3 class="section-heading">Filesystem — <code id="fs-path"></code></h3>
+      <div class="ticker-table-wrap">
+        <table class="ticker-table">
+          <thead>
+            <tr>
+              <th>Accession dir</th>
+              <th>File</th>
+              <th>Size</th>
+              <th>Modified</th>
+            </tr>
+          </thead>
+          <tbody id="fs-table-body"></tbody>
+        </table>
+      </div>
+      <p class="muted empty-message hidden" id="fs-empty">No files on disk for this ticker.</p>
+    </section>
+  </main>
+
+  <div class="toast hidden" id="toast"></div>
+  <script src="/static/browse.js"></script>
+</body>
+</html>
