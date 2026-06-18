@@ -1,9 +1,13 @@
 const LOOKBACK_OPTIONS = [
-  { label: "30 days", days: 30 },
-  { label: "90 days (3 months)", days: 90 },
-  { label: "180 days (6 months)", days: 180 },
-  { label: "365 days (1 year)", days: 365 },
-  { label: "730 days (2 years)", days: 730 },
+  { label: "1 day", days: 1 },
+  { label: "1 week", days: 7 },
+  { label: "1 month", days: 30 },
+  { label: "1 year", days: 365 },
+  { label: "2 years", days: 730 },
+  { label: "3 years", days: 1095 },
+  { label: "4 years", days: 1460 },
+  { label: "5 years", days: 1825 },
+  { label: "10 years", days: 3650 },
 ];
 
 const POLL_MS = 2500;
