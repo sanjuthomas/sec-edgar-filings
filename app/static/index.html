@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SEC EDGAR Filings</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="header">
+    <div>
+      <h1>SEC EDGAR Filings</h1>
+      <p class="subtitle">S&amp;P 500 download control panel</p>
+    </div>
+    <div class="header-meta" id="runtime-meta"></div>
+  </header>
+
+  <main class="layout">
+    <section class="card progress-card" id="progress-section">
+      <div class="card-header">
+        <h2>Job progress</h2>
+        <span class="badge" id="job-status-badge">idle</span>
+      </div>
+      <div id="no-job" class="muted">No job running.</div>
+      <div id="job-details" class="hidden">
+        <div class="progress-stats">
+          <div class="stat">
+            <span class="stat-label">Current ticker</span>
+            <span class="stat-value" id="current-ticker">—</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Completed</span>
+            <span class="stat-value" id="completed-count">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Remaining</span>
+            <span class="stat-value" id="remaining-count">0</span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Failed</span>
+            <span class="stat-value" id="failed-count">0</span>
+          </div>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <p class="job-message" id="job-message"></p>
+        <p class="job-error hidden" id="job-error"></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Download one ticker</h2>
+      <p class="muted">Fetch recent 10-K, 10-Q, and 8-K filings for a single symbol.</p>
+      <form id="single-ticker-form" class="form-grid">
+        <label>
+          Ticker
+          <input type="text" id="single-ticker" placeholder="AAPL" required maxlength="10" />
+        </label>
+        <label>
+          Lookback
+          <select id="single-lookback" class="lookback-select"></select>
+        </label>
+        <button type="submit" class="btn primary">Start download</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Batch download (S&amp;P 500)</h2>
+      <p class="muted">Process all active S&amp;P 500 tickers sequentially with SEC rate limiting.</p>
+      <form id="batch-form" class="form-grid">
+        <label>
+          Lookback
+          <select id="batch-lookback" class="lookback-select"></select>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="batch-skip-refresh" />
+          Skip universe refresh (use Mongo tickers)
+        </label>
+        <button type="submit" class="btn primary">Start batch</button>
+      </form>
+    </section>
+
+    <section class="card danger-card">
+      <h2>Full reload</h2>
+      <p class="muted">
+        Clears the <code>filing_metadata</code> Mongo collection and resets per-ticker
+        download state, then re-downloads the full S&amp;P 500 universe. Existing
+        files on disk are reused; Kafka events are republished for each filing.
+      </p>
+      <form id="reload-form" class="form-grid">
+        <label>
+          Lookback
+          <select id="reload-lookback" class="lookback-select"></select>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="reload-skip-refresh" />
+          Skip universe refresh
+        </label>
+        <label class="checkbox-label confirm-label">
+          <input type="checkbox" id="reload-confirm" required />
+          I understand this clears filing metadata
+        </label>
+        <button type="submit" class="btn danger">Clear &amp; reload all</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-header">
+        <h2>Universe coverage</h2>
+        <button type="button" class="btn subtle" id="refresh-universe">Refresh</button>
+      </div>
+      <div class="coverage-stats" id="coverage-stats"></div>
+      <div class="ticker-table-wrap">
+        <table class="ticker-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Company</th>
+              <th>Status</th>
+              <th>Last run</th>
+              <th>Found</th>
+              <th>New</th>
+              <th>Skipped</th>
+            </tr>
+          </thead>
+          <tbody id="ticker-table-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast hidden" id="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -103,6 +103,27 @@ class FilingStore:
                 exc,
             )
 
+    async def count_all(self) -> int:
+        """Return the number of stored filing metadata documents."""
+
+        await self._ensure_indexes()
+        try:
+            return await self._collection().count_documents({})
+        except PyMongoError as exc:
+            logger.warning("Mongo filing count failed: %s", exc)
+            return 0
+
+    async def clear_all(self) -> int:
+        """Delete all filing metadata. Returns the number of documents removed."""
+
+        await self._ensure_indexes()
+        try:
+            result = await self._collection().delete_many({})
+            return result.deleted_count
+        except PyMongoError as exc:
+            logger.warning("Mongo filing clear failed: %s", exc)
+            return 0
+
     def close(self) -> None:
         if self._client is not None:
             self._client.close()

@@ -39,7 +39,11 @@ def test_publish_filing_downloaded_noop_when_disabled():
     publisher = FilingEventPublisher()
 
     async def run():
-        await publisher.publish_filing_downloaded(METADATA)
+        with patch(
+            "app.messaging.filing_publisher.settings",
+            MagicMock(kafka_enabled=False),
+        ):
+            await publisher.publish_filing_downloaded(METADATA)
 
     asyncio.run(run())
 

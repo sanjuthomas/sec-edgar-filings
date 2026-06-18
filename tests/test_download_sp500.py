@@ -88,6 +88,10 @@ def test_run_download_sp500_processes_active_tickers():
                 "app.jobs.download_sp500.asyncio.sleep",
                 AsyncMock(),
             ) as mock_sleep,
+            patch(
+                "app.jobs.download_sp500.initialize_runtime",
+                AsyncMock(),
+            ),
         ):
             mock_client = AsyncMock()
             mock_client_cls.return_value.__aenter__ = AsyncMock(

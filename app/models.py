@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+JobType = Literal["single_ticker", "batch_download", "full_reload"]
+JobStatus = Literal["pending", "running", "completed", "failed"]
 
 
 class Filing(BaseModel):
@@ -141,3 +146,62 @@ class Sp500DownloadResult(BaseModel):
     failed_tickers: list[str]
     total_filings_downloaded: int
     total_filings_skipped: int
+
+
+class JobProgress(BaseModel):
+    """Live or final status for a background download job."""
+
+    job_id: str
+    job_type: JobType
+    status: JobStatus
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    ticker: str | None = None
+    current_ticker: str | None = None
+    lookback_days: int | None = None
+    tickers_total: int = 0
+    tickers_completed: int = 0
+    tickers_failed: int = 0
+    failed_tickers: list[str] = Field(default_factory=list)
+    total_filings_downloaded: int = 0
+    total_filings_skipped: int = 0
+    message: str | None = None
+    error: str | None = None
+    result: DownloadTickerResult | Sp500DownloadResult | None = None
+
+
+class Sp500TickerStatus(BaseModel):
+    """Per-ticker download state from the universe store."""
+
+    ticker: str
+    company_name: str | None = None
+    active: bool = True
+    last_download_at: datetime | None = None
+    last_download_status: str | None = None
+    last_download_lookback_days: int | None = None
+    last_download_filings_found: int | None = None
+    last_download_filings_downloaded: int | None = None
+    last_download_filings_skipped: int | None = None
+    last_download_error: str | None = None
+
+
+class Sp500StatusSummary(BaseModel):
+    """Aggregate S&P 500 download coverage."""
+
+    active_count: int
+    downloaded_ok: int
+    downloaded_error: int
+    never_downloaded: int
+    tickers: list[Sp500TickerStatus]
+
+
+class RuntimeConfig(BaseModel):
+    """Read-only effective runtime settings for the UI."""
+
+    kafka_enabled: bool
+    kafka_bootstrap_servers: str
+    kafka_filing_downloaded_topic: str
+    edgar_download_base: str
+    ticker_rate_limit_seconds: float
+    default_lookback_days: int
+    sp500_download_lookback_days: int

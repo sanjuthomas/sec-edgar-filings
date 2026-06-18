@@ -14,7 +14,7 @@ from pymongo import UpdateOne
 from pymongo.errors import PyMongoError
 
 from app.config import settings
-from app.models import Sp500Constituent, UniverseRefreshResult
+from app.models import Sp500Constituent, Sp500TickerStatus, UniverseRefreshResult
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +135,62 @@ class UniverseStore:
             )
         except PyMongoError as exc:
             logger.warning("Mongo S&P 500 scan record failed for %r: %s", ticker, exc)
+
+    async def reset_download_status(self) -> int:
+        """Clear per-ticker download fields so the next batch treats all as fresh."""
+
+        try:
+            result = await self._collection().update_many(
+                {},
+                {
+                    "$unset": {
+                        "last_download_at": "",
+                        "last_download_status": "",
+                        "last_download_lookback_days": "",
+                        "last_download_filings_found": "",
+                        "last_download_filings_downloaded": "",
+                        "last_download_filings_skipped": "",
+                        "last_download_error": "",
+                    }
+                },
+            )
+            return result.modified_count
+        except PyMongoError as exc:
+            logger.warning("Mongo S&P 500 download reset failed: %s", exc)
+            return 0
+
+    async def list_ticker_statuses(self, *, active_only: bool = True) -> list[Sp500TickerStatus]:
+        """Return download state for each constituent."""
+
+        query = {"active": True} if active_only else {}
+        try:
+            cursor = self._collection().find(query).sort("_id", 1)
+            docs = await cursor.to_list(length=None)
+        except PyMongoError as exc:
+            logger.warning("Mongo S&P 500 status list failed: %s", exc)
+            return []
+
+        statuses: list[Sp500TickerStatus] = []
+        for doc in docs:
+            statuses.append(
+                Sp500TickerStatus(
+                    ticker=doc["_id"],
+                    company_name=doc.get("company_name"),
+                    active=bool(doc.get("active", True)),
+                    last_download_at=doc.get("last_download_at"),
+                    last_download_status=doc.get("last_download_status"),
+                    last_download_lookback_days=doc.get("last_download_lookback_days"),
+                    last_download_filings_found=doc.get("last_download_filings_found"),
+                    last_download_filings_downloaded=doc.get(
+                        "last_download_filings_downloaded"
+                    ),
+                    last_download_filings_skipped=doc.get(
+                        "last_download_filings_skipped"
+                    ),
+                    last_download_error=doc.get("last_download_error"),
+                )
+            )
+        return statuses
 
     async def refresh_sp500(
         self,

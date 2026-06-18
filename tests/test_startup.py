@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.startup import initialize_runtime, log_startup_config
 
@@ -22,10 +22,16 @@ def test_log_startup_config_emits_connection_details(caplog):
 
 def test_initialize_runtime_skips_kafka_when_disabled():
     async def run():
-        with patch(
-            "app.startup.filing_event_publisher.connect",
-            AsyncMock(),
-        ) as mock_connect:
+        with (
+            patch(
+                "app.startup.settings",
+                MagicMock(kafka_enabled=False),
+            ),
+            patch(
+                "app.startup.filing_event_publisher.connect",
+                AsyncMock(),
+            ) as mock_connect,
+        ):
             await initialize_runtime()
         mock_connect.assert_not_awaited()
 

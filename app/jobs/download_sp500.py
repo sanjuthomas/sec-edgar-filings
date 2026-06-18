@@ -13,6 +13,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from collections.abc import Awaitable, Callable
 
 from app.config import settings
 from app.db.universe_store import universe_store
@@ -26,6 +27,8 @@ from app.universe.sp500 import fetch_sp500_constituents
 
 logger = logging.getLogger(__name__)
 
+TickerProgressCallback = Callable[[str, int, int], Awaitable[None] | None]
+
 
 async def run_download_sp500(
     *,
@@ -33,10 +36,14 @@ async def run_download_sp500(
     skip_refresh: bool = False,
     resume_from: str | None = None,
     lookback_days: int | None = None,
+    initialize: bool = True,
+    on_ticker_start: TickerProgressCallback | None = None,
+    on_ticker_complete: TickerProgressCallback | None = None,
 ) -> Sp500DownloadResult:
     """Refresh the S&P 500 list and download filings for each active ticker."""
 
-    await initialize_runtime()
+    if initialize:
+        await initialize_runtime()
 
     refresh_result: UniverseRefreshResult | None = None
     if skip_refresh:
@@ -61,7 +68,11 @@ async def run_download_sp500(
     tickers_processed = 0
 
     async with EdgarClient() as client:
+        total = len(tickers)
         for i, ticker in enumerate(tickers):
+            if on_ticker_start is not None:
+                await on_ticker_start(ticker, i, total)
+
             if i > 0 and settings.ticker_rate_limit_seconds > 0:
                 await asyncio.sleep(settings.ticker_rate_limit_seconds)
 
@@ -89,6 +100,8 @@ async def run_download_sp500(
                     lookback_days=effective_lookback,
                     error=str(exc),
                 )
+                if on_ticker_complete is not None:
+                    await on_ticker_complete(ticker, i + 1, total)
                 continue
 
             tickers_processed += 1
@@ -110,6 +123,8 @@ async def run_download_sp500(
                 result.filings_downloaded,
                 result.filings_skipped,
             )
+            if on_ticker_complete is not None:
+                await on_ticker_complete(ticker, i + 1, total)
 
     summary = Sp500DownloadResult(
         mode=mode,

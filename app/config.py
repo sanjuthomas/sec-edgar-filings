@@ -136,7 +136,7 @@ class Settings:
 
     # Kafka events emitted after a filing document is written to disk.
     kafka_enabled: bool = field(
-        default_factory=lambda: os.environ.get("KAFKA_ENABLED", "false").lower()
+        default_factory=lambda: os.environ.get("KAFKA_ENABLED", "true").lower()
         in ("1", "true", "yes")
     )
     kafka_bootstrap_servers: str = field(

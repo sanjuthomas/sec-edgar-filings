@@ -119,6 +119,10 @@ def test_download_ticker_counts_downloaded_and_skipped(tmp_path: Path):
                 "app.download.service.fetch_recent_filings",
                 AsyncMock(return_value=[FILING, FILING]),
             ),
+            patch(
+                "app.download.service.filing_event_publisher.publish_filing_downloaded",
+                AsyncMock(),
+            ),
         ):
             return await download_ticker(
                 mock_client,
