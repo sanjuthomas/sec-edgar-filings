@@ -5,8 +5,8 @@ EDGAR, stores the primary document on local disk, records metadata in MongoDB,
 and optionally publishes each newly registered filing to Kafka for downstream
 processing (for example, parsing and indexing into a vector database).
 
-The main workload is a batch job that walks the S&P 500 universe. A small
-optional FastAPI app exposes stored filing metadata by ticker.
+The main workload is a batch job that walks the S&P 500 universe. A FastAPI
+app serves a small web UI and read-only APIs for inspecting stored data.
 
 ## What it does
 
@@ -74,6 +74,7 @@ export KAFKA_HOST_PATH=/Volumes/Transcend/kafka-data
 
 docker compose up -d
 curl http://localhost:8080/health
+# Admin UI: http://localhost:8080/   Browse UI: http://localhost:8080/browse
 ```
 
 `EDGAR_HOST_PATH` is the folder on your Mac that Compose bind-mounts into
@@ -89,7 +90,7 @@ first `docker compose up` if they do not exist yet.
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `api` | 8080 | FastAPI metadata API |
+| `api` | 8080 | FastAPI app (Admin UI, Browse UI, REST API) |
 | `mongo` | 27017 | MongoDB (data on `MONGO_HOST_PATH`, default `/Volumes/Transcend/mongo-data`) |
 | `kafka` | 9092 | Kafka broker (KRaft; data on `KAFKA_HOST_PATH`, default `/Volumes/Transcend/kafka-data`) |
 
@@ -321,23 +322,63 @@ sequenceDiagram
     end
 ```
 
-## API (optional)
+## Web UI and API
 
-The API serves metadata already stored by the download jobs. It does not fetch
-from EDGAR on request.
+The FastAPI app serves two pages and a set of REST endpoints. It does not fetch
+from EDGAR on request — it reads data already stored by the download jobs.
 
 ```bash
 uvicorn app.main:app --port 8080
 ```
 
-```bash
-curl http://localhost:8080/health
-curl http://localhost:8080/api/filings/GS
-```
+### Admin (`/`)
+
+Control panel for download jobs (mutating operations):
+
+- **Download one ticker** — fetch recent filings for a single symbol
+- **Batch download** — walk the active S&P 500 universe sequentially
+- **Full reload** — clear `filing_metadata`, reset per-ticker download state,
+  and re-download the full universe (on-disk files are reused)
+- **Universe coverage** — table of per-ticker download status from MongoDB
+
+Job progress is polled live from the in-process job manager.
+
+### Browse (`/browse`)
+
+Read-only ticker lookup. Enter a symbol to see:
+
+- **MongoDB** — all `filing_metadata` documents for that ticker (form, filing
+  date, accession, download time, local path)
+- **Filesystem** — files under `{EDGAR_DOWNLOAD_BASE}/{TICKER}/` (accession
+  directory, filename, size, modified time)
+
+Returns empty tables when no data exists (no error). Supports direct links such
+as `/browse?ticker=GS`.
+
+### REST endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Liveness check |
+| `GET` | `/api/filings/{ticker}` | Filing metadata for one ticker (`404` if none) |
+| `GET` | `/api/browse/{ticker}` | Combined MongoDB metadata + on-disk file listing |
+| `GET` | `/api/config` | Runtime settings (Kafka, paths, rate limits) |
+| `GET` | `/api/stats` | Stored filing count and Kafka status |
+| `GET` | `/api/jobs/current` | Active download job, if any |
+| `POST` | `/api/jobs/download/ticker` | Start single-ticker download |
+| `POST` | `/api/jobs/download/batch` | Start S&P 500 batch download |
+| `POST` | `/api/jobs/download/full-reload` | Clear metadata and re-download all |
+| `GET` | `/api/universe/sp500/status` | S&P 500 coverage summary |
 
 Interactive docs: http://localhost:8080/docs
 
-### Example response
+```bash
+curl http://localhost:8080/health
+curl http://localhost:8080/api/filings/GS
+curl http://localhost:8080/api/browse/GS
+```
+
+### Example: filing metadata response
 
 ```json
 {
@@ -360,6 +401,50 @@ Interactive docs: http://localhost:8080/docs
 ```
 
 Returns `404` when no metadata exists for the ticker.
+
+### Example: browse response
+
+The browse endpoint always returns `200` for a valid ticker, with empty lists
+when no data is stored:
+
+```json
+{
+  "ticker": "GS",
+  "company_name": "GOLDMAN SACHS GROUP INC",
+  "mongo": {
+    "collection": "filing_metadata",
+    "count": 1,
+    "filings": [
+      {
+        "ticker": "GS",
+        "company_name": "GOLDMAN SACHS GROUP INC",
+        "filing_date": "2026-05-15",
+        "form": "10-Q",
+        "accession_number": "0000886982-26-000045",
+        "local_path": "/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm",
+        "document_url": "https://www.sec.gov/Archives/edgar/data/886982/000088698226000045/gs-20260515.htm",
+        "downloaded_at": "2026-06-16T17:19:53.857546Z"
+      }
+    ]
+  },
+  "filesystem": {
+    "base_path": "/Volumes/Transcend/edgar",
+    "ticker_path": "/Volumes/Transcend/edgar/GS",
+    "exists": true,
+    "accession_count": 1,
+    "file_count": 1,
+    "entries": [
+      {
+        "relative_path": "000088698226000045/gs-20260515.htm",
+        "accession_dir": "000088698226000045",
+        "name": "gs-20260515.htm",
+        "size_bytes": 12345,
+        "modified_at": "2026-06-16T17:19:53.857546Z"
+      }
+    ]
+  }
+}
+```
 
 ## Tests
 
