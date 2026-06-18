@@ -1,5 +1,7 @@
 # SEC EDGAR Filings Crawler
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Python service that downloads recent SEC filings (`10-K`, `10-Q`, `8-K`) from
 EDGAR, stores the primary document on local disk, records metadata in MongoDB,
 and optionally publishes each newly registered filing to Kafka for downstream
@@ -461,3 +463,7 @@ pytest
   download job (or API lifespan, if you use the API with Kafka enabled).
 - The `app/scan` and `app/analysis` packages contain buyback-phrase extraction
   code used by an older scan path; they are not exposed by the current API.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
