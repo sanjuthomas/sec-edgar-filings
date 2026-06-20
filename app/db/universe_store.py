@@ -159,6 +159,31 @@ class UniverseStore:
             logger.warning("Mongo S&P 500 download reset failed: %s", exc)
             return 0
 
+    async def reset_download_status_for_ticker(self, ticker: str) -> bool:
+        """Clear download fields for one ticker. Returns whether a doc was updated."""
+
+        try:
+            result = await self._collection().update_one(
+                {"_id": ticker.strip().upper()},
+                {
+                    "$unset": {
+                        "last_download_at": "",
+                        "last_download_status": "",
+                        "last_download_lookback_days": "",
+                        "last_download_filings_found": "",
+                        "last_download_filings_downloaded": "",
+                        "last_download_filings_skipped": "",
+                        "last_download_error": "",
+                    }
+                },
+            )
+            return result.modified_count > 0
+        except PyMongoError as exc:
+            logger.warning(
+                "Mongo S&P 500 download reset failed for %r: %s", ticker, exc
+            )
+            return False
+
     async def list_ticker_statuses(self, *, active_only: bool = True) -> list[Sp500TickerStatus]:
         """Return download state for each constituent."""
 

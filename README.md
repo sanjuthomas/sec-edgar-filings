@@ -147,7 +147,7 @@ All settings are read from environment variables at process start.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MONGO_URI` | `mongodb://localhost:27017` | Connection string |
-| `MONGO_DB` | `sec_edgar_filings_crawler` | Database name |
+| `MONGO_DB` | `sec_edgar_filings` | Database name |
 | `MONGO_TIMEOUT_MS` | `2000` | Server selection timeout |
 | `MONGO_TICKERS_COLLECTION` | `tickers` | Ticker → CIK cache |
 | `MONGO_FILING_METADATA_COLLECTION` | `filing_metadata` | Downloaded filing metadata |
@@ -363,6 +363,7 @@ as `/browse?ticker=GS`.
 |--------|------|-------------|
 | `GET` | `/health` | Liveness check |
 | `GET` | `/api/filings/{ticker}` | Filing metadata for one ticker (`404` if none) |
+| `DELETE` | `/api/filings/{ticker}` | Delete `filing_metadata` and on-disk files for one ticker |
 | `GET` | `/api/browse/{ticker}` | Combined MongoDB metadata + on-disk file listing |
 | `GET` | `/api/config` | Runtime settings (Kafka, paths, rate limits) |
 | `GET` | `/api/stats` | Stored filing count and Kafka status |

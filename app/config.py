@@ -77,7 +77,7 @@ class Settings:
         )
     )
     mongo_db: str = field(
-        default_factory=lambda: os.environ.get("MONGO_DB", "sec_edgar_filings_crawler")
+        default_factory=lambda: os.environ.get("MONGO_DB", "sec_edgar_filings")
     )
     mongo_tickers_collection: str = field(
         default_factory=lambda: os.environ.get(

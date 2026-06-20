@@ -124,6 +124,20 @@ class FilingStore:
             logger.warning("Mongo filing clear failed: %s", exc)
             return 0
 
+    async def delete_by_ticker(self, ticker: str) -> int:
+        """Delete all filing metadata for ``ticker``. Returns documents removed."""
+
+        normalized = ticker.strip().upper()
+        await self._ensure_indexes()
+        try:
+            result = await self._collection().delete_many({"ticker": normalized})
+            return result.deleted_count
+        except PyMongoError as exc:
+            logger.warning(
+                "Mongo filing delete failed for %r: %s", normalized, exc
+            )
+            return 0
+
     def close(self) -> None:
         if self._client is not None:
             self._client.close()

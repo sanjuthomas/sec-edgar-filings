@@ -36,7 +36,7 @@ def test_health_returns_ok():
 def test_get_filings_returns_200_with_stored_metadata():
     client = TestClient(app)
     with patch(
-        "app.main.filing_store.get_by_ticker",
+        "app.api.filings.filing_store.get_by_ticker",
         AsyncMock(return_value=[FILING]),
     ):
         response = client.get("/api/filings/GS")
@@ -52,10 +52,80 @@ def test_get_filings_returns_200_with_stored_metadata():
 def test_get_filings_unknown_ticker_returns_404():
     client = TestClient(app)
     with patch(
-        "app.main.filing_store.get_by_ticker",
+        "app.api.filings.filing_store.get_by_ticker",
         AsyncMock(return_value=[]),
     ):
         response = client.get("/api/filings/ZZZZ")
+
+    assert response.status_code == 404
+    assert "No filings found" in response.json()["detail"]
+
+
+def test_delete_filings_by_ticker_returns_deleted_count():
+    client = TestClient(app)
+    with (
+        patch(
+            "app.api.filings.filing_store.delete_by_ticker",
+            AsyncMock(return_value=3),
+        ),
+        patch(
+            "app.api.filings.delete_ticker_filesystem",
+            return_value=(3, 3),
+        ),
+        patch(
+            "app.api.filings.universe_store.reset_download_status_for_ticker",
+            AsyncMock(return_value=True),
+        ),
+    ):
+        response = client.delete("/api/filings/GS")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ticker"] == "GS"
+    assert body["collection"] == "filing_metadata"
+    assert body["deleted_count"] == 3
+    assert body["files_deleted"] == 3
+    assert body["accession_dirs_deleted"] == 3
+    assert body["universe_status_reset"] is True
+
+
+def test_delete_filings_cleans_orphaned_files_when_mongo_empty():
+    client = TestClient(app)
+    with (
+        patch(
+            "app.api.filings.filing_store.delete_by_ticker",
+            AsyncMock(return_value=0),
+        ),
+        patch(
+            "app.api.filings.delete_ticker_filesystem",
+            return_value=(5, 5),
+        ),
+        patch(
+            "app.api.filings.universe_store.reset_download_status_for_ticker",
+            AsyncMock(return_value=False),
+        ),
+    ):
+        response = client.delete("/api/filings/GS")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["deleted_count"] == 0
+    assert body["files_deleted"] == 5
+
+
+def test_delete_filings_unknown_ticker_returns_404():
+    client = TestClient(app)
+    with (
+        patch(
+            "app.api.filings.filing_store.delete_by_ticker",
+            AsyncMock(return_value=0),
+        ),
+        patch(
+            "app.api.filings.delete_ticker_filesystem",
+            return_value=(0, 0),
+        ),
+    ):
+        response = client.delete("/api/filings/ZZZZ")
 
     assert response.status_code == 404
     assert "No filings found" in response.json()["detail"]

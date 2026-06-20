@@ -50,3 +50,20 @@ def test_filing_store_exists_and_get_by_ticker():
     assert len(filings) == 1
     assert filings[0].form == "10-Q"
     mock_collection.replace_one.assert_awaited_once()
+
+
+def test_filing_store_delete_by_ticker():
+    store = FilingStore()
+    mock_collection = MagicMock()
+    mock_collection.create_index = AsyncMock()
+    mock_delete = MagicMock()
+    mock_delete.deleted_count = 2
+    mock_collection.delete_many = AsyncMock(return_value=mock_delete)
+
+    async def run():
+        with patch.object(store, "_collection", return_value=mock_collection):
+            return await store.delete_by_ticker("gs")
+
+    deleted = asyncio.run(run())
+    assert deleted == 2
+    mock_collection.delete_many.assert_awaited_once_with({"ticker": "GS"})

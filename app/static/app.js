@@ -249,6 +249,28 @@ function wireForms() {
     startJob("/api/jobs/download/full-reload", { lookback_days, skip_refresh });
   });
 
+  $("delete-filings-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!$("delete-confirm").checked) {
+      showToast("Confirm deletion before removing filings", true);
+      return;
+    }
+    const ticker = $("delete-ticker").value.trim().toUpperCase();
+    try {
+      const result = await api(`/api/filings/${encodeURIComponent(ticker)}`, {
+        method: "DELETE",
+      });
+      $("delete-confirm").checked = false;
+      await refreshRuntimeMeta();
+      await refreshUniverse();
+      showToast(
+        `Deleted ${result.deleted_count} MongoDB doc(s) and ${result.files_deleted} file(s) for ${result.ticker}`
+      );
+    } catch (err) {
+      showToast(err.message, true);
+    }
+  });
+
   $("refresh-universe").addEventListener("click", refreshUniverse);
 }
 

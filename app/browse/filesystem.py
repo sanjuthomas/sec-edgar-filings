@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -70,3 +71,31 @@ def list_ticker_filesystem(ticker: str) -> FilesystemBrowseResult:
         file_count=file_count,
         entries=entries,
     )
+
+
+def delete_ticker_filesystem(ticker: str) -> tuple[int, int]:
+    """Delete on-disk filing files for ``ticker``.
+
+    Returns ``(accession_dirs_deleted, files_deleted)``.
+    """
+
+    normalized = normalize_ticker(ticker)
+    base = Path(settings.edgar_download_base)
+    ticker_dir = base / normalized
+
+    if not ticker_dir.is_dir():
+        return 0, 0
+
+    accession_dirs_deleted = 0
+    files_deleted = 0
+    for accession_dir in ticker_dir.iterdir():
+        if not accession_dir.is_dir():
+            continue
+        accession_dirs_deleted += 1
+        for file_path in accession_dir.iterdir():
+            if file_path.is_file():
+                files_deleted += 1
+
+    shutil.rmtree(ticker_dir)
+    return accession_dirs_deleted, files_deleted
+

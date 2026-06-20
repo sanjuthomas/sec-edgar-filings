@@ -123,6 +123,17 @@ class FilingsResponse(BaseModel):
     filings: list[FilingMetadata]
 
 
+class DeleteFilingsByTickerResponse(BaseModel):
+    """Outcome of deleting stored filing metadata for one ticker."""
+
+    ticker: str
+    collection: str
+    deleted_count: int
+    files_deleted: int
+    accession_dirs_deleted: int
+    universe_status_reset: bool
+
+
 class DownloadTickerResult(BaseModel):
     """Outcome of downloading filings for one ticker."""
 

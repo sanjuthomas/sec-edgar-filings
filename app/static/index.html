@@ -71,6 +71,25 @@
       </form>
     </section>
 
+    <section class="card danger-card">
+      <h2>Delete ticker filings</h2>
+      <p class="muted">
+        Remove all <code>filing_metadata</code> documents and on-disk files for
+        one ticker under <code>EDGAR_DOWNLOAD_BASE</code>.
+      </p>
+      <form id="delete-filings-form" class="form-grid">
+        <label>
+          Ticker
+          <input type="text" id="delete-ticker" placeholder="GS" required maxlength="10" />
+        </label>
+        <label class="checkbox-label confirm-label">
+          <input type="checkbox" id="delete-confirm" required />
+          I understand this deletes MongoDB metadata and files on disk for this ticker
+        </label>
+        <button type="submit" class="btn danger">Delete filings</button>
+      </form>
+    </section>
+
     <section class="card">
       <h2>Batch download (S&amp;P 500)</h2>
       <p class="muted">Process all active S&amp;P 500 tickers sequentially with SEC rate limiting.</p>
