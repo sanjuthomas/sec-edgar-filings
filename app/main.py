@@ -25,6 +25,16 @@ from app.messaging.filing_publisher import filing_event_publisher
 from app.startup import initialize_runtime
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+_NO_CACHE = {"Cache-Control": "no-cache"}
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """Serve static assets without aggressive browser caching."""
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 @asynccontextmanager
@@ -53,7 +63,11 @@ app.include_router(browse_api.router)
 app.include_router(filings_api.router)
 
 if STATIC_DIR.is_dir():
-    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    app.mount(
+        "/static",
+        NoCacheStaticFiles(directory=STATIC_DIR),
+        name="static",
+    )
 
 
 @app.get("/health")
@@ -66,7 +80,7 @@ async def index() -> FileResponse:
     index_path = STATIC_DIR / "index.html"
     if not index_path.is_file():
         raise HTTPException(status_code=404, detail="UI not found")
-    return FileResponse(index_path)
+    return FileResponse(index_path, headers=_NO_CACHE)
 
 
 @app.get("/browse")
@@ -74,4 +88,4 @@ async def browse_page() -> FileResponse:
     browse_path = STATIC_DIR / "browse.html"
     if not browse_path.is_file():
         raise HTTPException(status_code=404, detail="Browse UI not found")
-    return FileResponse(browse_path)
+    return FileResponse(browse_path, headers=_NO_CACHE)

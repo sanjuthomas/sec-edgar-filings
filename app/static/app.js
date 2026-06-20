@@ -28,19 +28,24 @@ function populateLookbackSelects() {
   }
 }
 
-function showToast(message, isError = false) {
+function showToast(message, isError = false, durationMs = 4000) {
   const toast = $("toast");
   toast.textContent = message;
   toast.classList.toggle("hidden", false);
   toast.style.borderColor = isError ? "var(--error)" : "var(--border)";
   clearTimeout(showToast._timer);
-  showToast._timer = setTimeout(() => toast.classList.add("hidden"), 4000);
+  showToast._timer = setTimeout(() => toast.classList.add("hidden"), durationMs);
 }
 
 async function api(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const hasBody = options.body != null;
+  if (hasBody && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
   const response = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
+    headers,
   });
   const text = await response.text();
   const body = text ? JSON.parse(text) : null;
@@ -252,22 +257,34 @@ function wireForms() {
   $("delete-filings-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!$("delete-confirm").checked) {
-      showToast("Confirm deletion before removing filings", true);
+      showToast("Check the confirmation box to delete filings", true);
       return;
     }
     const ticker = $("delete-ticker").value.trim().toUpperCase();
+    if (!ticker) {
+      showToast("Enter a ticker to delete", true);
+      return;
+    }
+
+    const button = event.submitter || $("delete-filings-form").querySelector("button");
+    button.disabled = true;
     try {
       const result = await api(`/api/filings/${encodeURIComponent(ticker)}`, {
         method: "DELETE",
       });
       $("delete-confirm").checked = false;
+      $("delete-ticker").value = "";
       await refreshRuntimeMeta();
       await refreshUniverse();
       showToast(
-        `Deleted ${result.deleted_count} MongoDB doc(s) and ${result.files_deleted} file(s) for ${result.ticker}`
+        `Deleted ${result.deleted_count} MongoDB doc(s) and ${result.files_deleted} file(s) for ${result.ticker}`,
+        false,
+        8000
       );
     } catch (err) {
       showToast(err.message, true);
+    } finally {
+      button.disabled = false;
     }
   });
 
