@@ -53,48 +53,50 @@ being throttled or blocked.
 
 ## Docker
 
-The app, MongoDB, and Kafka can run in Docker. Downloaded filings are still written
-to your **local external drive** via a bind mount — not inside the container
-filesystem.
+The app, MongoDB, and Kafka can run in Docker. Downloaded filings are written
+to **`SEC_EDGAR_DOCUMENT_ROOT`** on the host via a bind mount — not inside the
+container filesystem.
+
+### Shared path conventions
+
+| Concept | Meaning |
+|---------|---------|
+| **`SEC_EDGAR_DOCUMENT_ROOT`** | Host directory for downloaded filing `.htm` files |
+| **`LOCAL_DATA_ROOT`** | Parent directory for bind-mounted data (filings, MongoDB, Kafka, etc.) |
+
+In `.env`, set `SEC_EDGAR_DOCUMENT_ROOT=${LOCAL_DATA_ROOT}/edgar-filings`. This repo maps it to `EDGAR_DOWNLOAD_BASE` and `EDGAR_HOST_PATH`. Downstream ETL projects use `EDGAR_DATA_DIR` for the same path.
 
 ### Prerequisites
 
 - Docker Desktop (or Docker Engine + Compose v2)
-- Transcend drive mounted at `/Volumes/Transcend`
-- On macOS: enable file sharing for `/Volumes` in Docker Desktop
-  (Settings → Resources → File sharing)
+- Writable host directories for `LOCAL_DATA_ROOT` (see `.env.example`)
 
 ### Quick start
 
 ```bash
 cp .env.example .env
-# Edit .env — set SEC_USER_AGENT to your real name + email
-
-export EDGAR_HOST_PATH=/Volumes/Transcend/edgar
-export MONGO_HOST_PATH=/Volumes/Transcend/mongo-data
-export KAFKA_HOST_PATH=/Volumes/Transcend/kafka-data
+# Edit .env — set SEC_USER_AGENT, LOCAL_DATA_ROOT, SEC_EDGAR_DOCUMENT_ROOT
 
 docker compose up -d
 curl http://localhost:8080/health
 # Admin UI: http://localhost:8080/   Browse UI: http://localhost:8080/browse
 ```
 
-`EDGAR_HOST_PATH` is the folder on your Mac that Compose bind-mounts into
-containers. The mount target inside the container is the same path
-(`/Volumes/Transcend/edgar`) so `local_path` values in MongoDB and Kafka stay
-consistent with files on disk.
+`EDGAR_HOST_PATH` is the folder on the host that Compose bind-mounts into
+containers. Keep it **identical** to `EDGAR_DOWNLOAD_BASE` / `SEC_EDGAR_DOCUMENT_ROOT`
+so `local_path` values in MongoDB and Kafka match files on disk.
 
-MongoDB and Kafka data are also stored on the Transcend drive via bind mounts
-(`MONGO_HOST_PATH`, `KAFKA_HOST_PATH`). Create those directories before the
-first `docker compose up` if they do not exist yet.
+MongoDB and Kafka data live under `LOCAL_DATA_ROOT` via `MONGO_HOST_PATH` and
+`KAFKA_HOST_PATH`. Create those directories before the first `docker compose up`
+if they do not exist yet.
 
 ### Services
 
 | Service | Port | Description |
 |---------|------|-------------|
 | `api` | 8080 | FastAPI app (Admin UI, Browse UI, REST API) |
-| `mongo` | 27017 | MongoDB (data on `MONGO_HOST_PATH`, default `/Volumes/Transcend/mongo-data`) |
-| `kafka` | 9092 | Kafka broker (KRaft; data on `KAFKA_HOST_PATH`, default `/Volumes/Transcend/kafka-data`) |
+| `mongo` | 27017 | MongoDB (data on `MONGO_HOST_PATH`, default `${LOCAL_DATA_ROOT}/mongo-data`) |
+| `kafka` | 9092 | Kafka broker (KRaft; data on `KAFKA_HOST_PATH`, default `${LOCAL_DATA_ROOT}/kafka-data`) |
 
 Inside the stack, the app connects to `mongodb://mongo:27017` and
 `kafka:9092`. Kafka publishing is enabled by default in Compose
@@ -105,10 +107,6 @@ Inside the stack, the app connects to `mongodb://mongo:27017` and
 One-off job containers use the `jobs` profile:
 
 ```bash
-export EDGAR_HOST_PATH=/Volumes/Transcend/edgar
-export MONGO_HOST_PATH=/Volumes/Transcend/mongo-data
-export KAFKA_HOST_PATH=/Volumes/Transcend/kafka-data
-
 docker compose --profile jobs run --rm refresh-sp500
 docker compose --profile jobs run --rm download-sp500
 
@@ -116,10 +114,12 @@ docker compose --profile jobs run --rm download-sp500
 docker compose --profile jobs run --rm download-sp500 -- --lookback-days 90 -v
 ```
 
+(Job containers inherit bind-mount paths from `.env` / `docker-compose.yml`.)
+
 ### Stop and rebuild
 
 ```bash
-docker compose down          # stop services; data kept on Transcend bind mounts
+docker compose down          # stop services; data kept on host bind mounts
 docker compose build api     # rebuild after code changes
 docker compose up -d --build # rebuild and restart
 ```
@@ -137,10 +137,12 @@ All settings are read from environment variables at process start.
 | `SEC_MAX_RPS` | `8` | Max EDGAR requests per second |
 | `SEC_TIMEOUT` | `30` | HTTP timeout (seconds) |
 | `SEC_MAX_RETRIES` | `3` | Retries on transient failures |
-| `EDGAR_DOWNLOAD_BASE` | `/Volumes/Transcend/edgar` | Root directory for downloaded files |
-| `EDGAR_HOST_PATH` | `/Volumes/Transcend/edgar` | Host path for the Docker bind mount (Compose only) |
-| `MONGO_HOST_PATH` | `/Volumes/Transcend/mongo-data` | Host path for MongoDB data (Compose only) |
-| `KAFKA_HOST_PATH` | `/Volumes/Transcend/kafka-data` | Host path for Kafka data (Compose only) |
+| `LOCAL_DATA_ROOT` | — | Parent directory for bind-mounted data (see `.env.example`) |
+| `SEC_EDGAR_DOCUMENT_ROOT` | `${LOCAL_DATA_ROOT}/edgar-filings` | Document root for downloaded filing `.htm` files |
+| `EDGAR_DOWNLOAD_BASE` | same as `SEC_EDGAR_DOCUMENT_ROOT` | Root directory for downloaded files (app runtime) |
+| `EDGAR_HOST_PATH` | same as `SEC_EDGAR_DOCUMENT_ROOT` | Host path for the Docker bind mount (Compose only) |
+| `MONGO_HOST_PATH` | `${LOCAL_DATA_ROOT}/mongo-data` | Host path for MongoDB data (Compose only) |
+| `KAFKA_HOST_PATH` | `${LOCAL_DATA_ROOT}/kafka-data` | Host path for Kafka data (Compose only) |
 
 ### MongoDB
 
@@ -186,13 +188,13 @@ local disk path, S&P 500 source URL).
 Each filing is stored as:
 
 ```text
-{EDGAR_DOWNLOAD_BASE}/{TICKER}/{accession_no_dashes}/{primary_document}
+{SEC_EDGAR_DOCUMENT_ROOT}/{TICKER}/{accession_no_dashes}/{primary_document}
 ```
 
 Example:
 
 ```text
-/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm
+${SEC_EDGAR_DOCUMENT_ROOT}/GS/000088698226000045/gs-20260515.htm
 ```
 
 ## MongoDB collections
@@ -242,7 +244,7 @@ MongoDB upsert). Message key: `accession_number`. Message value (JSON):
   "filing_date": "2026-05-15",
   "form": "10-Q",
   "accession_number": "0000886982-26-000045",
-  "local_path": "/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm",
+  "local_path": "${SEC_EDGAR_DOCUMENT_ROOT}/GS/000088698226000045/gs-20260515.htm",
   "document_url": "https://www.sec.gov/Archives/edgar/data/...",
   "downloaded_at": "2026-06-16T17:19:53.857546Z"
 }
@@ -395,7 +397,7 @@ curl http://localhost:8080/api/browse/GS
       "filing_date": "2026-05-15",
       "form": "10-Q",
       "accession_number": "0000886982-26-000045",
-      "local_path": "/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm",
+      "local_path": "${SEC_EDGAR_DOCUMENT_ROOT}/GS/000088698226000045/gs-20260515.htm",
       "document_url": "https://www.sec.gov/Archives/edgar/data/886982/000088698226000045/gs-20260515.htm",
       "downloaded_at": "2026-06-16T17:19:53.857546Z"
     }
@@ -424,15 +426,15 @@ when no data is stored:
         "filing_date": "2026-05-15",
         "form": "10-Q",
         "accession_number": "0000886982-26-000045",
-        "local_path": "/Volumes/Transcend/edgar/GS/000088698226000045/gs-20260515.htm",
+        "local_path": "${SEC_EDGAR_DOCUMENT_ROOT}/GS/000088698226000045/gs-20260515.htm",
         "document_url": "https://www.sec.gov/Archives/edgar/data/886982/000088698226000045/gs-20260515.htm",
         "downloaded_at": "2026-06-16T17:19:53.857546Z"
       }
     ]
   },
   "filesystem": {
-    "base_path": "/Volumes/Transcend/edgar",
-    "ticker_path": "/Volumes/Transcend/edgar/GS",
+    "base_path": "${SEC_EDGAR_DOCUMENT_ROOT}",
+    "ticker_path": "${SEC_EDGAR_DOCUMENT_ROOT}/GS",
     "exists": true,
     "accession_count": 1,
     "file_count": 1,

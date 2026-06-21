@@ -1,5 +1,13 @@
 name: sec-edgar-filings-crawler
 
+# Local data root (override with LOCAL_DATA_ROOT in .env):
+#   /Users/sanjuthomas/work/sec-edgar-local-test
+#   ├── mongo-data/
+#   ├── kafka-data/
+#   └── edgar-filings/
+#
+# Shares network sec-edgar_default with sec-edgar-filings-to-pgvector compose.
+
 services:
   mongo:
     image: mongo:7
@@ -7,7 +15,9 @@ services:
     ports:
       - "27017:27017"
     volumes:
-      - ${MONGO_HOST_PATH:-/Volumes/Transcend/mongo-data}:/data/db
+      - ${MONGO_HOST_PATH:-/Users/sanjuthomas/work/sec-edgar-local-test/mongo-data}:/data/db
+    networks:
+      - sec-edgar
     healthcheck:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
       interval: 10s
@@ -33,9 +43,11 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
     volumes:
-      - ${KAFKA_HOST_PATH:-/Volumes/Transcend/kafka-data}:/tmp/kraft-combined-logs
+      - ${KAFKA_HOST_PATH:-/Users/sanjuthomas/work/sec-edgar-local-test/kafka-data}:/tmp/kraft-combined-logs
     ports:
       - "9092:9092"
+    networks:
+      - sec-edgar
     healthcheck:
       test:
         [
@@ -59,9 +71,9 @@ services:
       MONGO_URI: mongodb://mongo:27017
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
-      EDGAR_DOWNLOAD_BASE: /Volumes/Transcend/edgar
+      EDGAR_DOWNLOAD_BASE: ${EDGAR_DOWNLOAD_BASE:-/Users/sanjuthomas/work/sec-edgar-local-test/edgar-filings}
     volumes:
-      - ${EDGAR_HOST_PATH:-/Volumes/Transcend/edgar}:/Volumes/Transcend/edgar
+      - ${EDGAR_HOST_PATH:-/Users/sanjuthomas/work/sec-edgar-local-test/edgar-filings}:${EDGAR_DOWNLOAD_BASE:-/Users/sanjuthomas/work/sec-edgar-local-test/edgar-filings}
     ports:
       - "8080:8080"
     depends_on:
@@ -69,6 +81,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+    networks:
+      - sec-edgar
 
   download-sp500:
     build: .
@@ -82,9 +96,9 @@ services:
       MONGO_URI: mongodb://mongo:27017
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_ENABLED: ${KAFKA_ENABLED:-true}
-      EDGAR_DOWNLOAD_BASE: /Volumes/Transcend/edgar
+      EDGAR_DOWNLOAD_BASE: ${EDGAR_DOWNLOAD_BASE:-/Users/sanjuthomas/work/sec-edgar-local-test/edgar-filings}
     volumes:
-      - ${EDGAR_HOST_PATH:-/Volumes/Transcend/edgar}:/Volumes/Transcend/edgar
+      - ${EDGAR_HOST_PATH:-/Users/sanjuthomas/work/sec-edgar-local-test/edgar-filings}:${EDGAR_DOWNLOAD_BASE:-/Users/sanjuthomas/work/sec-edgar-local-test/edgar-filings}
     depends_on:
       mongo:
         condition: service_healthy
@@ -106,3 +120,8 @@ services:
       mongo:
         condition: service_healthy
     command: ["python", "-m", "app.jobs.refresh_sp500"]
+
+networks:
+  sec-edgar:
+    name: sec-edgar_default
+    driver: bridge
